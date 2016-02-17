@@ -48,7 +48,6 @@
  * Copyright (C) 1994-2003 by Todd M. Austin, Ph.D. and SimpleScalar, LLC.
  */
 
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -64,6 +63,48 @@
 #include "options.h"
 #include "stats.h"
 #include "sim.h"
+
+/* IDENTIFYING INSTRUCTIONS */
+
+//unconditional branch, jump or call
+#define IS_UNCOND_CTRL(op) (MD_OP_FLAGS(op) & F_CALL || MD_OP_FLAGS(op) & F_UNCOND)
+
+//conditional branch instruction
+#define IS_COND_CTRL(op) (MD_OP_FLAGS(op) & F_COND)
+
+//floating-point computation
+#define IS_FCOMP(op) (MD_OP_FLAGS(op) & F_FCOMP)
+
+//integer computation
+#define IS_ICOMP(op) (MD_OP_FLAGS(op) & F_ICOMP)
+
+//load instruction
+#define IS_LOAD(op)  (MD_OP_FLAGS(op) & F_LOAD)
+
+//store instruction
+#define IS_STORE(op) (MD_OP_FLAGS(op) & F_STORE)
+
+//trap instruction
+#define IS_TRAP(op) (MD_OP_FLAGS(op) & F_TRAP) 
+
+#define USES_INT_FU(op) (IS_ICOMP(op) || IS_LOAD(op) || IS_STORE(op))
+#define USES_FP_FU(op) (IS_FCOMP(op))
+
+#define WRITES_CDB(op) (IS_ICOMP(op) || IS_LOAD(op) || IS_FCOMP(op))
+
+
+/* FOR DEBUGGING */
+
+//prints info about an instruction
+#define PRINT_INST(out,instr,str,cycle)	\
+  myfprintf(out, "%d: %s", cycle, str);		\
+  md_print_insn(instr->inst, instr->pc, out); \
+  myfprintf(stdout, "(%d)\n",instr->index);
+
+#define PRINT_REG(out,reg,str,instr) \
+  myfprintf(out, "reg#%d %s ", reg, str);	\
+  md_print_insn(instr->inst, instr->pc, out); \
+  myfprintf(stdout, "(%d)\n",instr->index);
 
 /*
  * This file implements a functional simulator.  This functional simulator is
