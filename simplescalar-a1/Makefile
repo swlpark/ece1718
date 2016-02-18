@@ -381,7 +381,7 @@ sim-fast$(EEXT):	sysprobe$(EEXT) sim-fast.$(OEXT) $(OBJS) libexo/libexo.$(LEXT)
 	$(CC) -o sim-fast$(EEXT) $(CFLAGS) sim-fast.$(OEXT) $(OBJS) libexo/libexo.$(LEXT) $(MLIBS)
 
 sim-safe$(EEXT):	sysprobe$(EEXT) sim-safe.$(OEXT) $(OBJS) libexo/libexo.$(LEXT) $(CPP_OBJS)
-	g++ -o sim-safe$(EEXT) $(CFLAGS) sim-safe.$(OEXT) $(OBJS) $(CPP_OBJS) libexo/libexo.$(LEXT) $(MLIBS)
+	g++ -o sim-safe$(EEXT) $(CFLAGS) sim-safe.$(OEXT) $(CPP_OBJS) $(OBJS) libexo/libexo.$(LEXT) $(MLIBS)
 
 sim-profile$(EEXT):	sysprobe$(EEXT) sim-profile.$(OEXT) $(OBJS) libexo/libexo.$(LEXT)
 	$(CC) -o sim-profile$(EEXT) $(CFLAGS) sim-profile.$(OEXT) $(OBJS) libexo/libexo.$(LEXT) $(MLIBS)
@@ -480,8 +480,8 @@ main.$(OEXT): host.h misc.h machine.h machine.def endian.h version.h dlite.h
 main.$(OEXT): regs.h memory.h options.h stats.h eval.h loader.h sim.h
 sim-fast.$(OEXT): host.h misc.h machine.h machine.def regs.h memory.h
 sim-fast.$(OEXT): options.h stats.h eval.h loader.h syscall.h dlite.h sim.h
-sim-safe.$(OEXT): host.h misc.h machine.h machine.def regs.h memory.h
-sim-safe.$(OEXT): options.h stats.h eval.h loader.h syscall.h dlite.h sim.h
+sim-safe.$(OEXT): host.h misc.h machine.h machine.def regs.h memory.h ir_detector.h
+sim-safe.$(OEXT): options.h stats.h eval.h loader.h syscall.h dlite.h sim.h ir_detector.h
 sim-cache.$(OEXT): host.h misc.h machine.h machine.def regs.h memory.h
 sim-cache.$(OEXT): options.h stats.h eval.h cache.h loader.h syscall.h
 sim-cache.$(OEXT): dlite.h sim.h

@@ -63,6 +63,7 @@
 #include "options.h"
 #include "stats.h"
 #include "sim.h"
+#include "ir_detector.h"
 
 /* IDENTIFYING INSTRUCTIONS */
 
@@ -115,12 +116,18 @@
 
 /* simulated registers */
 static struct regs_t regs;
+struct regs_t p_regs;
 
 /* simulated memory */
 static struct mem_t *mem = NULL;
 
 /* track number of refs */
 static counter_t sim_num_refs = 0;
+
+
+/* track number of non-modifying register writes */
+counter_t sim_reg_nmod_wr = 0;
+
 
 /* maximum number of inst's to execute */
 static unsigned int max_insts;
@@ -159,7 +166,7 @@ sim_reg_stats(struct stat_sdb_t *sdb)
 		   "total number of instructions executed",
 		   &sim_num_insn, sim_num_insn, NULL);
   stat_reg_counter(sdb, "sim_num_refs",
-		   "total number of loads and stores executed",
+		   "total number of land stores executed",
 		   &sim_num_refs, 0, NULL);
   stat_reg_int(sdb, "sim_elapsed_time",
 	       "total simulation time in seconds",
@@ -167,6 +174,9 @@ sim_reg_stats(struct stat_sdb_t *sdb)
   stat_reg_formula(sdb, "sim_inst_rate",
 		   "simulation speed (in insts/sec)",
 		   "sim_num_insn / sim_elapsed_time", NULL);
+  stat_reg_counter(sdb, "sim_reg_nmod_wr",
+		   "non-modifying register writes",
+		   &sim_reg_nmod_wr, 0, NULL);
 
   ld_reg_stats(sdb);
   mem_reg_stats(mem, sdb);
@@ -318,6 +328,9 @@ sim_uninit(void)
 /* system call handler macro */
 #define SYSCALL(INST)	sys_syscall(&regs, mem_access, mem, INST, TRUE)
 
+//target register numbers and source registers
+int r_out[2], r_in[3];
+
 /* start simulation, program loaded, processor precise state initialized */
 void
 sim_main(void)
@@ -338,6 +351,7 @@ sim_main(void)
     dlite_main(regs.regs_PC - sizeof(md_inst_t),
 	       regs.regs_PC, sim_num_insn, &regs, mem);
 
+  ir_detector_setup(512);
   while (TRUE)
     {
 
@@ -362,12 +376,16 @@ sim_main(void)
       /* decode the instruction */
       MD_SET_OPCODE(op, inst);
 
-      /* execute the instruction */
+      /* copy regfile before executing the instruction */
+      p_regs = regs;
 
+      /* execute the instruction */
       switch (op)
 	{
 #define DEFINST(OP,MSK,NAME,OPFORM,RES,FLAGS,O1,O2,I1,I2,I3)		\
 	case OP:							\
+          r_out[0] = (O1); r_out[1] = (O2);				\
+          r_in[0] = (I1); r_in[1] = (I2); r_in[2] = (I3);		\
           SYMCAT(OP,_IMPL);						\
           break;
 #define DEFLINK(OP,MSK,NAME,MASK,SHIFT)					\
@@ -401,13 +419,16 @@ sim_main(void)
 	  if (MD_OP_FLAGS(op) & F_STORE)
 	    is_write = TRUE;
 	}
-
+    
       /* check for DLite debugger entry condition */
       if (dlite_check_break(regs.regs_NPC,
 			    is_write ? ACCESS_WRITE : ACCESS_READ,
 			    addr, sim_num_insn, sim_num_insn))
 	dlite_main(regs.regs_PC, regs.regs_NPC, sim_num_insn, &regs, mem);
 
+      /* run ir_detector */
+      process_new_instr(op, &regs, &p_regs, r_in, r_out);
+      
       /* go to the next instruction */
       regs.regs_PC = regs.regs_NPC;
       regs.regs_NPC += sizeof(md_inst_t);
