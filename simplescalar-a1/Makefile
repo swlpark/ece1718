@@ -375,13 +375,13 @@ sysprobe$(EEXT):	sysprobe.c
 	@echo probe libs: $(MLIBS)
 
 ir_detector.o:	ir_detector.cpp ir_detector.h
-	g++ $(CFLAGS) -c ir_detector.cpp
+	g++ $(CFLAGS) -std=c++11 -c ir_detector.cpp
 
 sim-fast$(EEXT):	sysprobe$(EEXT) sim-fast.$(OEXT) $(OBJS) libexo/libexo.$(LEXT)
 	$(CC) -o sim-fast$(EEXT) $(CFLAGS) sim-fast.$(OEXT) $(OBJS) libexo/libexo.$(LEXT) $(MLIBS)
 
 sim-safe$(EEXT):	sysprobe$(EEXT) sim-safe.$(OEXT) $(OBJS) libexo/libexo.$(LEXT) $(CPP_OBJS)
-	g++ -o sim-safe$(EEXT) $(CFLAGS) sim-safe.$(OEXT) $(CPP_OBJS) $(OBJS) libexo/libexo.$(LEXT) $(MLIBS)
+	g++  -std=c++11 -o sim-safe$(EEXT) $(CFLAGS) sim-safe.$(OEXT) $(CPP_OBJS) $(OBJS) libexo/libexo.$(LEXT) $(MLIBS)
 
 sim-profile$(EEXT):	sysprobe$(EEXT) sim-profile.$(OEXT) $(OBJS) libexo/libexo.$(LEXT)
 	$(CC) -o sim-profile$(EEXT) $(CFLAGS) sim-profile.$(OEXT) $(OBJS) libexo/libexo.$(LEXT) $(MLIBS)

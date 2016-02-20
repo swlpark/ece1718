@@ -128,6 +128,11 @@ static counter_t sim_num_refs = 0;
 /* track number of non-modifying register writes */
 counter_t sim_reg_nmod_wr = 0;
 
+/* track number of non-modifying register writes */
+counter_t sim_reg_uref_wr = 0;
+
+/* track number of non-modifying register writes */
+counter_t sim_inef_br = 0;
 
 /* maximum number of inst's to execute */
 static unsigned int max_insts;
@@ -175,9 +180,14 @@ sim_reg_stats(struct stat_sdb_t *sdb)
 		   "simulation speed (in insts/sec)",
 		   "sim_num_insn / sim_elapsed_time", NULL);
   stat_reg_counter(sdb, "sim_reg_nmod_wr",
-		   "non-modifying register writes",
+		   "total non-modifying register writes",
 		   &sim_reg_nmod_wr, 0, NULL);
-
+  stat_reg_counter(sdb, "sim_reg_uref_wr",
+		   "total unreferenced register writes",
+		   &sim_reg_uref_wr, 0, NULL);
+  stat_reg_counter(sdb, "sim_inef_br",
+		   "total ineffectual branches",
+		   &sim_inef_br, 0, NULL);
   ld_reg_stats(sdb);
   mem_reg_stats(mem, sdb);
 }
@@ -427,7 +437,7 @@ sim_main(void)
 	dlite_main(regs.regs_PC, regs.regs_NPC, sim_num_insn, &regs, mem);
 
       /* run ir_detector */
-      process_new_instr(op, &regs, &p_regs, r_in, r_out);
+      process_new_instr(op, &regs, &p_regs, r_in, r_out, regs.regs_PC, regs.regs_NPC);
       
       /* go to the next instruction */
       regs.regs_PC = regs.regs_NPC;

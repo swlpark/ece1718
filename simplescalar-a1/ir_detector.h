@@ -18,6 +18,6 @@ enum branch_t
 
 
 void ir_detector_setup(size_t w_size);
-void process_new_instr(enum md_opcode op, struct regs_t * regfile, struct regs_t * p_regifle, int * r_in, int * r_out);
+void process_new_instr(enum md_opcode op, struct regs_t * regfile, struct regs_t * p_regifle, const int * r_in, const int * r_out, md_addr_t pc, md_addr_t next_pc);
 
 #endif
