@@ -160,7 +160,6 @@ void _transitive_check(int p_indices[3])
    }
 }
 
-
 /*
 * Update consumer references into ORT table, and check if the value is unused
 */
@@ -180,7 +179,7 @@ void _uref_check(const int * r_in, const int * r_out)
     if (ort_regfile[r_out[0]].valid && !ort_regfile[r_out[0]].referenced && ort_regfile[r_out[0]].ort_pair == DNA ) {
       sim_reg_uref_wr++;
 
-      //TODO: check if its source producers can be removed as well
+      //check if its source producers can be removed as well - transitively ineffectual instructions
       int producers[3] = {instr_window[ort_regfile[r_out[0]].producer_idx].src_idx1,
                           instr_window[ort_regfile[r_out[0]].producer_idx].src_idx2,
                           instr_window[ort_regfile[r_out[0]].producer_idx].src_idx3};
@@ -199,7 +198,7 @@ void _uref_check(const int * r_in, const int * r_out)
     if (ort_regfile[r_out[1]].valid && !ort_regfile[r_out[1]].referenced && ort_regfile[r_out[1]].ort_pair == DNA ) {
       sim_reg_uref_wr++;
 
-      //TODO: check if its source producers can be removed as well
+      //check if its source producers can be removed as well - transitively ineffectual instructions
       int producers[3] = {instr_window[ort_regfile[r_out[1]].producer_idx].src_idx1,
                           instr_window[ort_regfile[r_out[1]].producer_idx].src_idx2,
                           instr_window[ort_regfile[r_out[1]].producer_idx].src_idx3};
@@ -312,7 +311,12 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
    if (instr_window[fifo_mid].chk_ineff_br) {
       if (btb_map[instr_window[fifo_mid].branch_pc].const_tgt)
       {
-        //TODO: check if its source producers can be removed as well
+        //check if its source producers can be removed as well - transitively ineffectual instructions
+        int producers[3] = {instr_window[fifo_mid].src_idx1,
+                            instr_window[fifo_mid].src_idx2,
+                            instr_window[fifo_mid].src_idx3};
+        _transitive_check(producers);
+
       }
    }
 
