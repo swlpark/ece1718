@@ -48,7 +48,6 @@ struct fifo_entry
   md_addr_t mem_out1;
   md_addr_t mem_out2;
   
-
   //keep track of producer entries inside the FIFO; used for follow transitively ineffectual instructions
   //-1 if it is not using the source operand 
   int src_idx1;
@@ -170,9 +169,9 @@ bool _nmod_check_mem()
 }
 
 /*
- *
+ * Recursively remove instructions that are producing values for ineffectual instructions
  */
-void _transitive_check(int p_indices[3])
+void _decrement_consumer(int p_indices[3])
 {
    size_t i_idx; 
    for (int i =0; i < 3; i++) {
@@ -183,7 +182,19 @@ void _transitive_check(int p_indices[3])
             instr_window[i_idx].consumer_count -= 1;
          else if (instr_window[i_idx].consumer_count == 1) {
             instr_window[i_idx].consumer_count = 0;
-            sim_transitive_ineff++;
+
+            //If this instruction is not current producer of any ORT table entry, recurse on its prodcuer
+            //because no further instructions will become its consumer
+            if (ort_regfile[instr_window[i_idx].reg_out1].producer_idx != i_idx
+             && ort_regfile[instr_window[i_idx].reg_out2].producer_idx != i_idx
+             && ort_memory[instr_window[i_idx].mem_out1].producer_idx != i_idx
+             && ort_memory[instr_window[i_idx].mem_out1].producer_idx != i_idx
+            ) {
+               int producers[3] = {instr_window[i_idx].src_idx1,
+                                   instr_window[i_idx].src_idx2,
+                                   instr_window[i_idx].src_idx3};
+               _decrement_consumer(producers);
+            }
          }
      }
    }
@@ -228,7 +239,7 @@ void _uref_check(const int * r_out)
       int producers[3] = {instr_window[ort_regfile[r_out[0]].producer_idx].src_idx1,
                           instr_window[ort_regfile[r_out[0]].producer_idx].src_idx2,
                           instr_window[ort_regfile[r_out[0]].producer_idx].src_idx3};
-      _transitive_check(producers);
+      _decrement_consumer(producers);
     }
 
     //update regfile ORT
@@ -247,7 +258,7 @@ void _uref_check(const int * r_out)
       int producers[3] = {instr_window[ort_regfile[r_out[1]].producer_idx].src_idx1,
                           instr_window[ort_regfile[r_out[1]].producer_idx].src_idx2,
                           instr_window[ort_regfile[r_out[1]].producer_idx].src_idx3};
-      _transitive_check(producers);
+      _decrement_consumer(producers);
 
     }
     //update regfile ORT
@@ -274,7 +285,7 @@ void _uref_check_mem(const int * r_in)
       int producers[3] = {instr_window[ort_memory[_mem_store_addr_0].producer_idx].src_idx1,
                           instr_window[ort_memory[_mem_store_addr_0].producer_idx].src_idx2,
                           instr_window[ort_memory[_mem_store_addr_0].producer_idx].src_idx3};
-      _transitive_check(producers);
+      _decrement_consumer(producers);
     }
 
     //update memory ORT
@@ -294,7 +305,7 @@ void _uref_check_mem(const int * r_in)
       int producers[3] = {instr_window[ort_memory[_mem_store_addr_1].producer_idx].src_idx1,
                           instr_window[ort_memory[_mem_store_addr_1].producer_idx].src_idx2,
                           instr_window[ort_memory[_mem_store_addr_1].producer_idx].src_idx3};
-      _transitive_check(producers);
+      _decrement_consumer(producers);
     }
 
     //update memory ORT
@@ -390,7 +401,6 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
 
         //increment number of dynamic instances of this branch in the instruction window
         btb_map[pc].valid_cnt += 1;
-      }
    }
 
    //if incoming instruction is not ineffectual entry,
@@ -413,7 +423,7 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
         int producers[3] = {instr_window[fifo_mid].src_idx1,
                             instr_window[fifo_mid].src_idx2,
                             instr_window[fifo_mid].src_idx3};
-        _transitive_check(producers);
+        _decrement_consumer(producers);
 
       }
    }
@@ -430,8 +440,9 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
    if (w_instr_cnt < instr_window.size()) {
      w_instr_cnt += 1;
 
-   //Invalidate ORT entry of the oldest instruction being evicted out from the window
+   //Instruction is being evicted out from the window
    } else {
+     //1) Invalidate ORT entry of the oldest instruction being evicted out from the window
      if(ort_regfile[instr_window[fifo_head].reg_out1].valid &&
         ort_regfile[instr_window[fifo_head].reg_out1].producer_idx == fifo_head)
      {
@@ -442,7 +453,6 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
      {
         ort_regfile[instr_window[fifo_head].reg_out2].valid = false;
      }
-
      if((ort_memory.find(instr_window[fifo_head].mem_out1) != ort_memory.end()) && ort_memory[instr_window[fifo_head].mem_out1].valid
       && ort_memory[instr_window[fifo_head].mem_out1].producer_idx == fifo_head)
      {
@@ -453,7 +463,11 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
      {
         ort_memory[instr_window[fifo_head].mem_out2].valid = false;
      }
+     //End of 1)
 
+     //2) If its consumer count is 0, it is deemed ineffectual ("no valid instruction consumes its value")
+     if (instr_window[fifo_head].consumer_count == 0)
+       sim_transitive_ineff++; 
    }
 
    //Instruction FIFO update
