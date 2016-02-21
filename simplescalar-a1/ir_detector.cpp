@@ -143,6 +143,24 @@ bool _nmod_check(bool is_float, regs_t * regfile, regs_t * p_regifle, const int 
   return false;
 }
 
+void _transitive_check(int p_indices[3])
+{
+   size_t i_idx; 
+   for (int i =0; i < 3; i++) {
+     if (p_indices[i] > 0) {
+         i_idx = (size_t) p_indices[i];
+         assert(instr_window[i_idx].valid);
+         if (instr_window[i_idx].consumer_count > 1)
+            instr_window[i_idx].consumer_count -= 1;
+         else if (instr_window[i_idx].consumer_count == 1) {
+            instr_window[i_idx].consumer_count = 0;
+            sim_transitive_ineff++;
+         }
+     }
+   }
+}
+
+
 /*
 * Update consumer references into ORT table, and check if the value is unused
 */
@@ -163,12 +181,16 @@ void _uref_check(const int * r_in, const int * r_out)
       sim_reg_uref_wr++;
 
       //TODO: check if its source producers can be removed as well
+      int producers[3] = {instr_window[ort_regfile[r_out[0]].producer_idx].src_idx1,
+                          instr_window[ort_regfile[r_out[0]].producer_idx].src_idx2,
+                          instr_window[ort_regfile[r_out[0]].producer_idx].src_idx3};
+      _transitive_check(producers);
     }
 
     //update regfile ORT
     ort_regfile[r_out[0]].valid = true;
     ort_regfile[r_out[0]].referenced = false;
-    ort_regfile[r_out[0]].producer_idx = p_incr_fifo_ptr(fifo_head);
+    ort_regfile[r_out[0]].producer_idx = fifo_head;
     ort_regfile[r_out[0]].ort_pair = r_out[1];
   }
   if (r_out[1] != DNA)
@@ -178,31 +200,18 @@ void _uref_check(const int * r_in, const int * r_out)
       sim_reg_uref_wr++;
 
       //TODO: check if its source producers can be removed as well
-      int producers[3] = {};
+      int producers[3] = {instr_window[ort_regfile[r_out[1]].producer_idx].src_idx1,
+                          instr_window[ort_regfile[r_out[1]].producer_idx].src_idx2,
+                          instr_window[ort_regfile[r_out[1]].producer_idx].src_idx3};
+      _transitive_check(producers);
+
     }
     //update regfile ORT
     ort_regfile[r_out[1]].valid = true;
     ort_regfile[r_out[1]].referenced = false;
-    ort_regfile[r_out[1]].producer_idx = p_incr_fifo_ptr(fifo_head);
+    ort_regfile[r_out[1]].producer_idx = fifo_head;
     ort_regfile[r_out[1]].ort_pair = r_out[0];
   }
-}
-
-void _transitive_check(int p_indices[3])
-{
-   size_t i_idx; 
-   for (int i =0; i < 3; i++) {
-     if (p_indices[i] > 0) {
-         i_idx = (size_t) p_idx1;
-         assert(instr_window[i_idx].valid);
-         if (instr_window[i_idx].consumer_count > 1)
-            instr_window[i_idx].consumer_count -= 1;
-         else if (instr_window[i_idx].consumer_count == 1) {
-            instr_window[i_idx].consumer_count = 0;
-            sim_transitive_ineff++;
-         }
-     }
-   }
 }
 
 
@@ -303,7 +312,6 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
    if (instr_window[fifo_mid].chk_ineff_br) {
       if (btb_map[instr_window[fifo_mid].branch_pc].const_tgt)
       {
-        //TODO: go after its src producers
         //TODO: check if its source producers can be removed as well
       }
    }
