@@ -13,8 +13,8 @@
 /* IDENTIFYING INSTRUCTIONS */
 
 //ONE way to read an integer register
-#define READ_I_REG(N)			(regfile->regs_R[N])
-#define READ_I_PREG(N)			(p_regifle->regs_R[N])
+#define READ_I_REG(N)		(regfile->regs_R[N])
+#define READ_I_PREG(N)		(p_regifle->regs_R[N])
 
 //TWO ways to read a floating point register
 #define READ_F_REG(N)		(regfile->regs_F.f[(N)])
@@ -46,6 +46,7 @@ struct fifo_entry
   unsigned reg_out1;
   unsigned reg_out2;
   md_addr_t mem_out1;
+  md_addr_t mem_out2;
   
 
   //keep track of producer entries inside the FIFO; used for follow transitively ineffectual instructions
@@ -66,12 +67,13 @@ struct fifo_entry
     reg_out1 = 0;
     reg_out2 = 0;
     mem_out1 = 0;
+    mem_out2 = 0;
   }
 };
 
+//branch target buffer; keep track of each branch's tgt address, flag whether if its target has changed
 struct btb_entry
 {
-  //keep track of producers
   md_addr_t tgt_addr;
   bool     const_tgt;
   unsigned valid_cnt;
@@ -112,11 +114,15 @@ extern "C" void ir_detector_setup(size_t w_size)
   w_instr_cnt = 0;
 }
 
+/*
+ *  non-modifying register write checks
+ */
 bool _nmod_check(bool is_float, regs_t * regfile, regs_t * p_regifle, const int * r_out)
 {
   if (is_float)
   {
      if (r_out[0] != DNA && (READ_F_REG(r_out[0]) == READ_F_REG(r_out[0]) && READ_D_REG(r_out[0]) == READ_D_REG(r_out[0]))) {
+       //if instruction is writing to 2 registers, both of them have to be non-modifying
        if (r_out[1] != DNA) {
           if (READ_F_REG(r_out[1]) == READ_F_REG(r_out[1]) && READ_D_REG(r_out[1]) == READ_D_REG(r_out[1])){
             return true;
@@ -131,6 +137,7 @@ bool _nmod_check(bool is_float, regs_t * regfile, regs_t * p_regifle, const int 
      //non-modifying write check on REG_0: if matched, instr selected for removal as it enters FIFO
      if (r_out[0] != DNA && (READ_I_REG(r_out[0]) == READ_I_PREG(r_out[0])))
      {
+       //if instruction is writing to 2 registers, both of them have to be non-modifying
        if (r_out[1] != DNA) {
           if (READ_I_REG(r_out[1]) == READ_I_PREG(r_out[1])) {
             return true;
@@ -143,6 +150,28 @@ bool _nmod_check(bool is_float, regs_t * regfile, regs_t * p_regifle, const int 
   return false;
 }
 
+/*
+ *  non-modifying memory checks
+ */
+bool _nmod_check_mem()
+{
+  if (_mem_store_addr_0 != 0 && (_mem_store_new_word_0 == _mem_store_old_word_0))
+  {
+       //if instruction is writing to two addresses, both of them have to be non-modifying
+     if (_mem_store_addr_1 != 0) {
+        if (_mem_store_new_word_1 == _mem_store_old_word_1) {
+          return true;
+        }
+     } else {
+       return true;
+     }
+  }
+  return false;
+}
+
+/*
+ *
+ */
 void _transitive_check(int p_indices[3])
 {
    size_t i_idx; 
@@ -161,9 +190,9 @@ void _transitive_check(int p_indices[3])
 }
 
 /*
-* Update consumer references into ORT table, and check if the value is unused
-*/
-void _uref_check(const int * r_in, const int * r_out)
+ * Src reference update; tag instructions that produce the source operands in the window
+ */
+void _ref_update(const int * r_in)
 {
   for(int i=0; i<3; i++)
   {
@@ -172,7 +201,23 @@ void _uref_check(const int * r_in, const int * r_out)
       instr_window[ort_regfile[r_in[i]].producer_idx].consumer_count += 1;
     }
   }
+  if ((ort_memory.find(_mem_load_addr_0) != ort_memory.end()) && ort_memory[_mem_load_addr_0].valid  &&
+      _mem_load_addr_0 != 0) {
+     ort_memory[_mem_load_addr_0].referenced = true;
+     instr_window[ort_memory[_mem_load_addr_0].producer_idx].consumer_count += 1;
+  }
+  if ((ort_memory.find(_mem_load_addr_1) != ort_memory.end()) && ort_memory[_mem_load_addr_1].valid  &&
+      _mem_load_addr_1 != 0) {
+     ort_memory[_mem_load_addr_1].referenced = true;
+     instr_window[ort_memory[_mem_load_addr_1].producer_idx].consumer_count += 1;
+  }
+}
 
+/*
+* check references in ORT reg table, and check if the current producer is unused
+*/
+void _uref_check(const int * r_out)
+{
   if (r_out[0] != DNA)
   {
     //check if the previous producer was ever referenced
@@ -213,6 +258,53 @@ void _uref_check(const int * r_in, const int * r_out)
   }
 }
 
+/*
+* check references in ORT memory table, and check if the current producer is unused
+*/
+void _uref_check_mem(const int * r_in)
+{
+  if (_mem_store_addr_0 != 0)
+  {
+    //check if the previous producer was ever referenced
+    if ((ort_memory.find(_mem_store_addr_0) != ort_memory.end()) && ort_memory[_mem_store_addr_0].valid &&
+        !ort_memory[_mem_store_addr_0].referenced && ort_memory[_mem_store_addr_0].ort_pair == DNA ) {
+      sim_mem_uref_wr++;
+
+      //check if its source producers can be removed as well - transitively ineffectual instructions
+      int producers[3] = {instr_window[ort_memory[_mem_store_addr_0].producer_idx].src_idx1,
+                          instr_window[ort_memory[_mem_store_addr_0].producer_idx].src_idx2,
+                          instr_window[ort_memory[_mem_store_addr_0].producer_idx].src_idx3};
+      _transitive_check(producers);
+    }
+
+    //update memory ORT
+    ort_memory[_mem_store_addr_0].valid = true;
+    ort_memory[_mem_store_addr_0].referenced = false;
+    ort_memory[_mem_store_addr_0].producer_idx = fifo_head;
+    ort_memory[_mem_store_addr_0].ort_pair = _mem_store_addr_1;
+  }
+  if (_mem_store_addr_1 != 0)
+  {
+    //check if the previous producer was ever referenced
+    if ((ort_memory.find(_mem_store_addr_1) != ort_memory.end()) && ort_memory[_mem_store_addr_1].valid &&
+        !ort_memory[_mem_store_addr_1].referenced && ort_memory[_mem_store_addr_1].ort_pair == DNA ) {
+      sim_mem_uref_wr++;
+
+      //check if its source producers can be removed as well - transitively ineffectual instructions
+      int producers[3] = {instr_window[ort_memory[_mem_store_addr_1].producer_idx].src_idx1,
+                          instr_window[ort_memory[_mem_store_addr_1].producer_idx].src_idx2,
+                          instr_window[ort_memory[_mem_store_addr_1].producer_idx].src_idx3};
+      _transitive_check(producers);
+    }
+
+    //update memory ORT
+    ort_memory[_mem_store_addr_1].valid = true;
+    ort_memory[_mem_store_addr_1].referenced = false;
+    ort_memory[_mem_store_addr_1].producer_idx = fifo_head;
+    ort_memory[_mem_store_addr_1].ort_pair = _mem_store_addr_0;
+  }
+}
+
 
 extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, struct regs_t * p_regifle, const int * r_in, const int * r_out, md_addr_t pc, md_addr_t next_pc)
 {
@@ -227,7 +319,8 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
    incoming_instr.reg_out2 = r_out[1];
 
    //TODO: set if the instruction is store; 
-   incoming_instr.mem_out1 = 0;
+   incoming_instr.mem_out1 = _mem_store_addr_0;
+   incoming_instr.mem_out2 = _mem_store_addr_1;
 
    //integer computation
    if (MD_OP_FLAGS(op) & F_ICOMP)
@@ -264,7 +357,8 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
    //producer memory ort, consumer for reg ort
    else if (MD_OP_FLAGS(op) & F_STORE)
    {
-
+      if ((rm_on_entry = _nmod_check_mem()))
+        sim_mem_nmod_wr++;
    }
    //unconditional branches are marked as ineffectual upon entry
    else if (MD_OP_FLAGS(op) & F_CALL || MD_OP_FLAGS(op) & F_UNCOND)
@@ -303,7 +397,11 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
    //update references and check for unreferenced writes
    if (!rm_on_entry)
    {
-      _uref_check(r_in, r_out);
+      _ref_update(r_in);
+      if (MD_OP_FLAGS(op) & F_STORE)
+        _uref_check_mem(r_in);
+      else
+        _uref_check(r_out);
    }
 
    //Ineffectual Branch CHECKS
@@ -319,13 +417,11 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
 
       }
    }
-
    if (instr_window[fifo_head].branch_pc != 0) {
       if (btb_map[instr_window[fifo_head].branch_pc].const_tgt)
       {
         sim_inef_br++;
       }
-
       if (btb_map[instr_window[fifo_head].branch_pc].valid_cnt > 0)
           btb_map[instr_window[fifo_head].branch_pc].valid_cnt -= 1;
    }
@@ -333,19 +429,31 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
    //Instruction Window size check
    if (w_instr_cnt < instr_window.size()) {
      w_instr_cnt += 1;
+
+   //Invalidate ORT entry of the oldest instruction being evicted out from the window
    } else {
-     //Invalidate ORT entry of the oldest instruction being evicted out from the window
      if(ort_regfile[instr_window[fifo_head].reg_out1].valid &&
         ort_regfile[instr_window[fifo_head].reg_out1].producer_idx == fifo_head)
      {
         ort_regfile[instr_window[fifo_head].reg_out1].valid = false;
      }
-
      if(ort_regfile[instr_window[fifo_head].reg_out2].valid &&
         ort_regfile[instr_window[fifo_head].reg_out2].producer_idx == fifo_head)
      {
         ort_regfile[instr_window[fifo_head].reg_out2].valid = false;
      }
+
+     if((ort_memory.find(instr_window[fifo_head].mem_out1) != ort_memory.end()) && ort_memory[instr_window[fifo_head].mem_out1].valid
+      && ort_memory[instr_window[fifo_head].mem_out1].producer_idx == fifo_head)
+     {
+        ort_memory[instr_window[fifo_head].mem_out1].valid = false;
+     }
+     if((ort_memory.find(instr_window[fifo_head].mem_out2) != ort_memory.end()) && ort_memory[instr_window[fifo_head].mem_out2].valid
+      && ort_memory[instr_window[fifo_head].mem_out2].producer_idx == fifo_head)
+     {
+        ort_memory[instr_window[fifo_head].mem_out2].valid = false;
+     }
+
    }
 
    //Instruction FIFO update

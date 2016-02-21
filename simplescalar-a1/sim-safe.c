@@ -137,8 +137,17 @@ counter_t sim_inef_br = 0;
 /* track number of transitive ineffectual instructions */
 counter_t sim_transitive_ineff = 0;
 
+/* track number of non-modifying memory writes */
+counter_t sim_mem_nmod_wr = 0;
+
+/* track number of unreferenced memory writes */
+counter_t sim_mem_uref_wr = 0;
+
 /* maximum number of inst's to execute */
 static unsigned int max_insts;
+
+/* instruction window size */
+static unsigned int window_size;
 
 /* register simulator-specific options */
 void
@@ -155,6 +164,11 @@ sim_reg_options(struct opt_odb_t *odb)
   /* instruction limit */
   opt_reg_uint(odb, "-max:inst", "maximum number of inst's to execute",
 	       &max_insts, /* default */0,
+	       /* print */TRUE, /* format */NULL);
+
+  /* instruction limit */
+  opt_reg_uint(odb, "-window:size", "instruction window size",
+	       &window_size, /* default */0,
 	       /* print */TRUE, /* format */NULL);
 
 }
@@ -194,6 +208,13 @@ sim_reg_stats(struct stat_sdb_t *sdb)
   stat_reg_counter(sdb, "sim_transitive_ineff",
 		   "total transitive ineff",
 		   &sim_transitive_ineff, 0, NULL);
+  stat_reg_counter(sdb, "sim_mem_nmod_wr",
+		   "total non-modifying memory writes",
+		   &sim_mem_nmod_wr, 0, NULL);
+  stat_reg_counter(sdb, "sim_mem_uref_wr",
+		   "total unreferenced memory writes",
+		   &sim_mem_uref_wr, 0, NULL);
+
   ld_reg_stats(sdb);
   mem_reg_stats(mem, sdb);
 }
@@ -347,6 +368,17 @@ sim_uninit(void)
 //target register numbers and source registers
 int r_out[2], r_in[3];
 
+md_addr_t _mem_load_addr_0;
+md_addr_t _mem_load_addr_1;
+
+md_addr_t _mem_store_addr_0;
+md_addr_t _mem_store_addr_1;
+
+word_t _mem_store_new_word_0;
+word_t _mem_store_new_word_1;
+word_t _mem_store_old_word_0;
+word_t _mem_store_old_word_1;
+
 /* start simulation, program loaded, processor precise state initialized */
 void
 sim_main(void)
@@ -367,7 +399,8 @@ sim_main(void)
     dlite_main(regs.regs_PC - sizeof(md_inst_t),
 	       regs.regs_PC, sim_num_insn, &regs, mem);
 
-  ir_detector_setup(512);
+  printf("%d\n", window_size);
+  ir_detector_setup(1 << 25);
   while (TRUE)
     {
 
@@ -394,6 +427,17 @@ sim_main(void)
 
       /* copy regfile before executing the instruction */
       p_regs = regs;
+
+      _mem_load_addr_0 = 0;
+      _mem_load_addr_1 = 0;
+
+      _mem_store_addr_0 = 0;
+      _mem_store_addr_1 = 0;
+
+      _mem_store_new_word_0 = 0;
+      _mem_store_new_word_1 = 0;
+      _mem_store_old_word_0 = 0;
+      _mem_store_old_word_1 = 0;
 
       /* execute the instruction */
       switch (op)
@@ -430,11 +474,11 @@ sim_main(void)
 	}
 
       if (MD_OP_FLAGS(op) & F_MEM)
-	{
-	  sim_num_refs++;
-	  if (MD_OP_FLAGS(op) & F_STORE)
-	    is_write = TRUE;
-	}
+      {
+        sim_num_refs++;
+        if (MD_OP_FLAGS(op) & F_STORE)
+          is_write = TRUE;
+      }
     
       /* check for DLite debugger entry condition */
       if (dlite_check_break(regs.regs_NPC,
