@@ -399,8 +399,7 @@ sim_main(void)
     dlite_main(regs.regs_PC - sizeof(md_inst_t),
 	       regs.regs_PC, sim_num_insn, &regs, mem);
 
-  printf("%d\n", window_size);
-  ir_detector_setup(1 << 25);
+  ir_detector_setup(window_size);
   while (TRUE)
     {
 
