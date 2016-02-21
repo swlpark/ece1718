@@ -401,6 +401,7 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
 
         //increment number of dynamic instances of this branch in the instruction window
         btb_map[pc].valid_cnt += 1;
+      }
    }
 
    //if incoming instruction is not ineffectual entry,
