@@ -40,26 +40,28 @@ struct ort_entry
 //dynamic instruction window FIFO entry
 struct fifo_entry
 {
+  bool valid;
+
+  //ORT output registers / memory locations; used for ORT invalidation upon window exit
   unsigned reg_out1;
   unsigned reg_out2;
   md_addr_t mem_out1;
   
-  //keep track of producers
-  unsigned src_idx1;
-  unsigned src_idx2;
-  unsigned src_idx3;
 
-  //store number of this instruction's consumers that are "effectual"; 
-  //if all of its dependent instructions are known and they have been selected for removal,
-  //a predecessor instruction is also selected for removal; all dep. instrs are known
-  //when another a write to the same reg/memory location occurs.
-  unsigned consumer_count;
+  //keep track of producer entries inside the FIFO; used for follow transitively ineffectual instructions
+  //-1 if it is not using the source operand 
+  int src_idx1;
+  int src_idx2;
+  int src_idx3;
+  //store number of this instruction's consumers that are "effectual"; if negative, the entry is already accounted for
+  //transitive write
+  int consumer_count;
 
   //if branch_pc != 0, this entry may be later determined to be ineffectual
   bool chk_ineff_br;
   md_addr_t branch_pc;
 
-  fifo_entry() : src_idx1(0), src_idx2(0), src_idx3(0), consumer_count(0), chk_ineff_br(false), branch_pc(0)
+  fifo_entry() : valid(false), src_idx1(0), src_idx2(0), src_idx3(0), consumer_count(0), chk_ineff_br(false), branch_pc(0)
   {
     reg_out1 = 0;
     reg_out2 = 0;
@@ -176,6 +178,7 @@ void _uref_check(const int * r_in, const int * r_out)
       sim_reg_uref_wr++;
 
       //TODO: check if its source producers can be removed as well
+      int producers[3] = {};
     }
     //update regfile ORT
     ort_regfile[r_out[1]].valid = true;
@@ -185,19 +188,37 @@ void _uref_check(const int * r_in, const int * r_out)
   }
 }
 
+void _transitive_check(int p_indices[3])
+{
+   size_t i_idx; 
+   for (int i =0; i < 3; i++) {
+     if (p_indices[i] > 0) {
+         i_idx = (size_t) p_idx1;
+         assert(instr_window[i_idx].valid);
+         if (instr_window[i_idx].consumer_count > 1)
+            instr_window[i_idx].consumer_count -= 1;
+         else if (instr_window[i_idx].consumer_count == 1) {
+            instr_window[i_idx].consumer_count = 0;
+            sim_transitive_ineff++;
+         }
+     }
+   }
+}
+
+
 extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, struct regs_t * p_regifle, const int * r_in, const int * r_out, md_addr_t pc, md_addr_t next_pc)
 {
    bool rm_on_entry = false;
    fifo_entry incoming_instr;
-
-   incoming_instr.src_idx1 = r_in[0];
-   incoming_instr.src_idx2 = r_in[1];
-   incoming_instr.src_idx3 = r_in[2];
+   incoming_instr.valid = true;
+   incoming_instr.src_idx1 = (r_in[0] != DNA) ? ort_regfile[r_in[0]].producer_idx : -1;
+   incoming_instr.src_idx2 = (r_in[1] != DNA) ? ort_regfile[r_in[1]].producer_idx : -1;
+   incoming_instr.src_idx3 = (r_in[2] != DNA) ? ort_regfile[r_in[2]].producer_idx : -1;
 
    incoming_instr.reg_out1 = r_out[0];
    incoming_instr.reg_out2 = r_out[1];
 
-   //TODO:
+   //TODO: set if the instruction is store; 
    incoming_instr.mem_out1 = 0;
 
    //integer computation
