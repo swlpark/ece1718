@@ -28,7 +28,7 @@ struct ort_entry
 {
   bool valid;
   bool referenced;
-  int producer_idx;
+  size_t producer_idx;
 
   //CORNER case for UNREFERENCED writes: two registers are produced by a single instruction
   int ort_pair;
@@ -40,39 +40,50 @@ struct ort_entry
 //dynamic instruction window FIFO entry
 struct fifo_entry
 {
+  unsigned reg_out1;
+  unsigned reg_out2;
+  md_addr_t mem_out1;
+  
   //keep track of producers
   unsigned src_idx1;
   unsigned src_idx2;
   unsigned src_idx3;
 
-  //store FIFO indexes to consumers that are alive; 
+  //store number of this instruction's consumers that are "effectual"; 
   //if all of its dependent instructions are known and they have been selected for removal,
   //a predecessor instruction is also selected for removal; all dep. instrs are known
   //when another a write to the same reg/memory location occurs.
   unsigned consumer_count;
 
-  fifo_entry() : src_idx1(0), src_idx2(0), src_idx3(0), consumer_count(0) {}
+  //if branch_pc != 0, this entry may be later determined to be ineffectual
+  bool chk_ineff_br;
+  md_addr_t branch_pc;
+
+  fifo_entry() : src_idx1(0), src_idx2(0), src_idx3(0), consumer_count(0), chk_ineff_br(false), branch_pc(0)
+  {
+    reg_out1 = 0;
+    reg_out2 = 0;
+    mem_out1 = 0;
+  }
 };
 
 struct btb_entry
 {
   //keep track of producers
-  md_addr_t pc;
-  md_addr_t next_pc;
-
-  bool const_tgt;
+  md_addr_t tgt_addr;
+  bool     const_tgt;
   unsigned valid_cnt;
 
-  btb_entry() : pc(0), next_pc(0), const_tgt(0), valid_cnt(0) {}
+  btb_entry() : tgt_addr(0), const_tgt(true), valid_cnt(0) {}
+  btb_entry(md_addr_t n_pc) : tgt_addr(n_pc), const_tgt(true), valid_cnt(1) {}
 };
-
 
 //ORT tables; ld/st instructions write to ort_memory
 std::unordered_map<md_addr_t, ort_entry> ort_memory; 
 std::vector<ort_entry> ort_regfile(MD_TOTAL_REGS);
 
 //conditional branch history buffer
-std::map<md_addr_t, btb_entry> btb; 
+std::unordered_map<md_addr_t, btb_entry> btb_map; 
 
 //the instruction window is implemented as a circular FIFO
 //vector size is kept at the initial size (w_size) during simulation
@@ -133,13 +144,13 @@ bool _nmod_check(bool is_float, regs_t * regfile, regs_t * p_regifle, const int 
 /*
 * Update consumer references into ORT table, and check if the value is unused
 */
-
 void _uref_check(const int * r_in, const int * r_out)
 {
   for(int i=0; i<3; i++)
   {
     if(r_in[i] != DNA) {
       ort_regfile[r_in[i]].referenced = true;
+      instr_window[ort_regfile[r_in[i]].producer_idx].consumer_count += 1;
     }
   }
 
@@ -148,6 +159,8 @@ void _uref_check(const int * r_in, const int * r_out)
     //check if the previous producer was ever referenced
     if (ort_regfile[r_out[0]].valid && !ort_regfile[r_out[0]].referenced && ort_regfile[r_out[0]].ort_pair == DNA ) {
       sim_reg_uref_wr++;
+
+      //TODO: check if its source producers can be removed as well
     }
 
     //update regfile ORT
@@ -161,6 +174,8 @@ void _uref_check(const int * r_in, const int * r_out)
     //check if the previous producer was ever referenced
     if (ort_regfile[r_out[1]].valid && !ort_regfile[r_out[1]].referenced && ort_regfile[r_out[1]].ort_pair == DNA ) {
       sim_reg_uref_wr++;
+
+      //TODO: check if its source producers can be removed as well
     }
     //update regfile ORT
     ort_regfile[r_out[1]].valid = true;
@@ -173,9 +188,20 @@ void _uref_check(const int * r_in, const int * r_out)
 extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, struct regs_t * p_regifle, const int * r_in, const int * r_out, md_addr_t pc, md_addr_t next_pc)
 {
    bool rm_on_entry = false;
+   fifo_entry incoming_instr;
+
+   incoming_instr.src_idx1 = r_in[0];
+   incoming_instr.src_idx2 = r_in[1];
+   incoming_instr.src_idx3 = r_in[2];
+
+   incoming_instr.reg_out1 = r_out[0];
+   incoming_instr.reg_out2 = r_out[1];
+
+   //TODO:
+   incoming_instr.mem_out1 = 0;
 
    //integer computation
-   if (F_ICOMP & MD_OP_FLAGS(op))
+   if (MD_OP_FLAGS(op) & F_ICOMP)
    {
       if ((rm_on_entry =_nmod_check(false, regfile, p_regifle, r_out)))
       {
@@ -183,7 +209,7 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
       }
    }
    //float computation
-   else if (F_FCOMP & MD_OP_FLAGS(op))
+   else if (MD_OP_FLAGS(op) & F_FCOMP)
    {
       if ((rm_on_entry = _nmod_check(true, regfile, p_regifle, r_out)))
       {
@@ -192,7 +218,7 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
    }
    //producer regfile ort, consumer for (memory & reg) ort 
    //LOAD instructions write to one register only 
-   else if (F_LOAD & MD_OP_FLAGS(op))
+   else if (MD_OP_FLAGS(op) & F_LOAD)
    {
      //writing to a floating-point register [i.e. 32-63]
      if ( r_out[0] > 31 && r_out[0] < 64 ) {
@@ -207,27 +233,90 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
      }
    }
    //producer memory ort, consumer for reg ort
-   else if (F_STORE & MD_OP_FLAGS(op))
+   else if (MD_OP_FLAGS(op) & F_STORE)
    {
 
    }
-   //unconditional branches
+   //unconditional branches are marked as ineffectual upon entry
    else if (MD_OP_FLAGS(op) & F_CALL || MD_OP_FLAGS(op) & F_UNCOND)
    {
-      //rm_on_entry = true;
+      rm_on_entry = true;
       sim_inef_br++;
    }
+   //conditional branches have to refer to branch-target-buffer later to determine
+   //if they are ineffectual in the context of instruction window
    else if (MD_OP_FLAGS(op) & F_COND)
    {
-      //rm_on_entry = true;
-      sim_inef_br++;
+      incoming_instr.branch_pc = pc;
+
+      if (btb_map.find(pc) == btb_map.end() || btb_map[pc].valid_cnt == 0)
+      {
+        btb_map[pc] = btb_entry(next_pc);
+      }
+      else
+      {
+        if (btb_map[pc].tgt_addr != next_pc)
+        {
+           btb_map[pc].const_tgt = false;
+        }
+        else if (btb_map[pc].const_tgt)
+        {
+          //this branch may be ineffectual; keep track of it
+          incoming_instr.chk_ineff_br = true;
+        }
+
+        //increment number of dynamic instances of this branch in the instruction window
+        btb_map[pc].valid_cnt += 1;
+      }
    }
 
+   //if incoming instruction is not ineffectual entry,
+   //update references and check for unreferenced writes
    if (!rm_on_entry)
    {
       _uref_check(r_in, r_out);
    }
 
+   //Ineffectual Branch CHECKS
+   //at the middle of instruction window, check if 
+   if (instr_window[fifo_mid].chk_ineff_br) {
+      if (btb_map[instr_window[fifo_mid].branch_pc].const_tgt)
+      {
+        //TODO: go after its src producers
+        //TODO: check if its source producers can be removed as well
+      }
+   }
+
+   if (instr_window[fifo_head].branch_pc != 0) {
+      if (btb_map[instr_window[fifo_head].branch_pc].const_tgt)
+      {
+        sim_inef_br++;
+      }
+
+      if (btb_map[instr_window[fifo_head].branch_pc].valid_cnt > 0)
+          btb_map[instr_window[fifo_head].branch_pc].valid_cnt -= 1;
+   }
+
+   //Instruction Window size check
+   if (w_instr_cnt < instr_window.size()) {
+     w_instr_cnt += 1;
+   } else {
+     //Invalidate ORT entry of the oldest instruction being evicted out from the window
+     if(ort_regfile[instr_window[fifo_head].reg_out1].valid &&
+        ort_regfile[instr_window[fifo_head].reg_out1].producer_idx == fifo_head)
+     {
+        ort_regfile[instr_window[fifo_head].reg_out1].valid = false;
+     }
+
+     if(ort_regfile[instr_window[fifo_head].reg_out2].valid &&
+        ort_regfile[instr_window[fifo_head].reg_out2].producer_idx == fifo_head)
+     {
+        ort_regfile[instr_window[fifo_head].reg_out2].valid = false;
+     }
+   }
+
    //Instruction FIFO update
-   
+   instr_window[fifo_head] = incoming_instr;
+   p_incr_fifo_ptr(fifo_head);
+   p_incr_fifo_ptr(fifo_mid);
 }

@@ -134,6 +134,9 @@ counter_t sim_reg_uref_wr = 0;
 /* track number of non-modifying register writes */
 counter_t sim_inef_br = 0;
 
+/* track number of transitive ineffectual instructions */
+counter_t sim_transitive_ineff = 0;
+
 /* maximum number of inst's to execute */
 static unsigned int max_insts;
 
@@ -188,6 +191,9 @@ sim_reg_stats(struct stat_sdb_t *sdb)
   stat_reg_counter(sdb, "sim_inef_br",
 		   "total ineffectual branches",
 		   &sim_inef_br, 0, NULL);
+  stat_reg_counter(sdb, "sim_transitive_ineff",
+		   "total transitive ineff",
+		   &sim_transitive_ineff, 0, NULL);
   ld_reg_stats(sdb);
   mem_reg_stats(mem, sdb);
 }
