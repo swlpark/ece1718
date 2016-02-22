@@ -399,6 +399,10 @@ sim_main(void)
     dlite_main(regs.regs_PC - sizeof(md_inst_t),
 	       regs.regs_PC, sim_num_insn, &regs, mem);
 
+  //default window size 32M
+  if(window_size == 0)
+   window_size = 32000000;
+
   ir_detector_setup(window_size);
   while (TRUE)
     {
