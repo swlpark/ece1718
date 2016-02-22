@@ -206,7 +206,7 @@ sim_reg_stats(struct stat_sdb_t *sdb)
 		   "total ineffectual branches",
 		   &sim_inef_br, 0, NULL);
   stat_reg_counter(sdb, "sim_transitive_ineff",
-		   "total transitive ineff",
+		   "total transitively ineffectual instructions",
 		   &sim_transitive_ineff, 0, NULL);
   stat_reg_counter(sdb, "sim_mem_nmod_wr",
 		   "total non-modifying memory writes",
@@ -493,7 +493,9 @@ sim_main(void)
       regs.regs_NPC += sizeof(md_inst_t);
 
       /* finish early? */
-      if (max_insts && sim_num_insn >= max_insts)
+      if (max_insts && sim_num_insn >= max_insts) {
+        myfprintf(stderr, "PC of most removed instr: 0x%08x", get_most_removed_instr());
 	return;
+      }
     }
 }

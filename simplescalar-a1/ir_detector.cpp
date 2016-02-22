@@ -1,3 +1,10 @@
+/* 
+* ir_detector.cpp:
+* Implements the IR-detector which looks at the retired dynamic instructions and determine
+* whehther a dynamic instruction is ineffectual. 
+*
+*/
+
 #include <map>
 #include <unordered_map>
 #include <vector>
@@ -57,7 +64,7 @@ struct fifo_entry
   //transitive write
   int consumer_count;
 
-  //if branch_pc != 0, this entry may be later determined to be ineffectual
+  //if chk_ineff_br == true, this entry may be later determined to be ineffectual
   bool chk_ineff_br;
   md_addr_t branch_pc;
 
@@ -88,6 +95,9 @@ std::vector<ort_entry> ort_regfile(MD_TOTAL_REGS);
 //conditional branch history buffer
 std::unordered_map<md_addr_t, btb_entry> btb_map; 
 
+//map to keep track of how many times instructions at a pc has been removed
+std::map<md_addr_t, unsigned> removed_instr_map;
+
 //the instruction window is implemented as a circular FIFO
 //vector size is kept at the initial size (w_size) during simulation
 std::vector<fifo_entry> instr_window;
@@ -95,6 +105,7 @@ size_t fifo_head;
 size_t fifo_mid;
 size_t w_instr_cnt;
 
+//circular FIFO ptr increment routine
 size_t p_incr_fifo_ptr(size_t & idx)
 {
    size_t retval = idx;
@@ -212,6 +223,7 @@ void _ref_update(const int * r_in)
       instr_window[ort_regfile[r_in[i]].producer_idx].consumer_count += 1;
     }
   }
+  //check if the matching ORT entry exisits in the table and it is valid before tagging its reference
   if ((ort_memory.find(_mem_load_addr_0) != ort_memory.end()) && ort_memory[_mem_load_addr_0].valid  &&
       _mem_load_addr_0 != 0) {
      ort_memory[_mem_load_addr_0].referenced = true;
@@ -316,10 +328,32 @@ void _uref_check_mem(const int * r_in)
   }
 }
 
+//return the PC of the most removed instruction
+extern "C" md_addr_t get_most_removed_instr()
+{
+  unsigned current_max = 0;
+  md_addr_t key_max  = 0;
+  for(auto it = removed_instr_map.cbegin(); it != removed_instr_map.cend(); ++it)
+  {
+     if(it->second > current_max) {
+        key_max = it->first;
+        current_max = it->second;
+     }
+  }
+  return key_max;
+}
+
+/*
+* Main IR-detector routine; update its ORT and instruction window data structure, and determine if
+* dynamic instructions in the window or the incoming instruction is ineffectual or not
+*/
 
 extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, struct regs_t * p_regifle, const int * r_in, const int * r_out, md_addr_t pc, md_addr_t next_pc)
 {
+   //if the new instruction is "removed" on entry, the IR detector should not update producer/consumer in ORT/Instr Window 
    bool rm_on_entry = false;
+
+   //new FIFO entry to be enqueued to the instructrion window
    fifo_entry incoming_instr;
    incoming_instr.valid = true;
    incoming_instr.src_idx1 = (r_in[0] != DNA) ? ort_regfile[r_in[0]].producer_idx : -1;
@@ -328,8 +362,6 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
 
    incoming_instr.reg_out1 = r_out[0];
    incoming_instr.reg_out2 = r_out[1];
-
-   //TODO: set if the instruction is store; 
    incoming_instr.mem_out1 = _mem_store_addr_0;
    incoming_instr.mem_out2 = _mem_store_addr_1;
 
@@ -338,6 +370,12 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
    {
       if ((rm_on_entry =_nmod_check(false, regfile, p_regifle, r_out)))
       {
+        if (removed_instr_map.find(pc) == removed_instr_map.end())
+        {
+           removed_instr_map[pc] = 1;
+        } else {
+           removed_instr_map[pc] += 1;
+        }
         sim_reg_nmod_wr++;
       }
    }
@@ -346,6 +384,12 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
    {
       if ((rm_on_entry = _nmod_check(true, regfile, p_regifle, r_out)))
       {
+        if (removed_instr_map.find(pc) == removed_instr_map.end())
+        {
+           removed_instr_map[pc] = 1;
+        } else {
+           removed_instr_map[pc] += 1;
+        }
         sim_reg_nmod_wr++;
       }
    }
@@ -356,11 +400,23 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
      //writing to a floating-point register [i.e. 32-63]
      if ( r_out[0] > 31 && r_out[0] < 64 ) {
         if ((rm_on_entry = _nmod_check(true, regfile, p_regifle, r_out))) {
+          if (removed_instr_map.find(pc) == removed_instr_map.end())
+          {
+             removed_instr_map[pc] = 1;
+          } else {
+             removed_instr_map[pc] += 1;
+          }
           sim_reg_nmod_wr++;
         }
      //writing to an integer register
      } else {
         if ((rm_on_entry = _nmod_check(false, regfile, p_regifle, r_out))) {
+          if (removed_instr_map.find(pc) == removed_instr_map.end())
+          {
+             removed_instr_map[pc] = 1;
+          } else {
+             removed_instr_map[pc] += 1;
+          }
           sim_reg_nmod_wr++;
         }
      }
@@ -368,12 +424,25 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
    //producer memory ort, consumer for reg ort
    else if (MD_OP_FLAGS(op) & F_STORE)
    {
-      if ((rm_on_entry = _nmod_check_mem()))
+      if ((rm_on_entry = _nmod_check_mem())) {
+        if (removed_instr_map.find(pc) == removed_instr_map.end())
+        {
+           removed_instr_map[pc] = 1;
+        } else {
+           removed_instr_map[pc] += 1;
+        }
         sim_mem_nmod_wr++;
+      }
    }
    //unconditional branches are marked as ineffectual upon entry
    else if (MD_OP_FLAGS(op) & F_CALL || MD_OP_FLAGS(op) & F_UNCOND)
    {
+      if (removed_instr_map.find(pc) == removed_instr_map.end())
+      {
+         removed_instr_map[pc] = 1;
+      } else {
+         removed_instr_map[pc] += 1;
+      }
       rm_on_entry = true;
       sim_inef_br++;
    }
@@ -405,7 +474,7 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
    }
 
    //if incoming instruction is not ineffectual entry,
-   //update references and check for unreferenced writes
+   //update references and check for unreferenced writes in ORT table
    if (!rm_on_entry)
    {
       _ref_update(r_in);
@@ -415,8 +484,11 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
         _uref_check(r_out);
    }
 
-   //Ineffectual Branch CHECKS
-   //at the middle of instruction window, check if 
+   //Predictable branch checks
+   //at the middle of instruction window, check if BTB indicates a target address has changed; if not
+   //we consider that the branch instruction is likely to be an ineffectual instruction, and we trigger
+   //decrement_consumer routine on its producers which may make them transitively ineffectual
+   //not 100% accurate, but it is a reasonable compromise
    if (instr_window[fifo_mid].chk_ineff_br) {
       if (btb_map[instr_window[fifo_mid].branch_pc].const_tgt)
       {
@@ -428,16 +500,24 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
 
       }
    }
+   //at the end of instruction window, check if BTB indicates a target address has changed; if not
+   //the branch instruction is definitely an ineffectual branch
    if (instr_window[fifo_head].branch_pc != 0) {
       if (btb_map[instr_window[fifo_head].branch_pc].const_tgt)
       {
         sim_inef_br++;
+        if (removed_instr_map.find(instr_window[fifo_head].branch_pc) == removed_instr_map.end())
+        {
+           removed_instr_map[instr_window[fifo_head].branch_pc] = 1;
+        } else {
+           removed_instr_map[instr_window[fifo_head].branch_pc] += 1;
+        }
       }
       if (btb_map[instr_window[fifo_head].branch_pc].valid_cnt > 0)
           btb_map[instr_window[fifo_head].branch_pc].valid_cnt -= 1;
    }
 
-   //Instruction Window size check
+   //Instruction Window size check; if the window is not yet full, no instruction gets evicted
    if (w_instr_cnt < instr_window.size()) {
      w_instr_cnt += 1;
 
@@ -471,7 +551,7 @@ extern "C" void process_new_instr(enum md_opcode op, struct regs_t * regfile, st
        sim_transitive_ineff++; 
    }
 
-   //Instruction FIFO update
+   //Instruction window update; increment FIFO indices
    instr_window[fifo_head] = incoming_instr;
    p_incr_fifo_ptr(fifo_head);
    p_incr_fifo_ptr(fifo_mid);

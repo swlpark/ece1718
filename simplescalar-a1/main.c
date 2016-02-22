@@ -74,6 +74,7 @@
 #include "stats.h"
 #include "loader.h"
 #include "sim.h"
+#include "ir_detector.h"
 
 /* stats signal handler */
 static void
@@ -217,6 +218,7 @@ exit_now(int exit_code)
 {
   /* print simulation stats */
   sim_print_stats(stderr);
+  myfprintf(stderr, "PARKLAWR: PC of most removed instr: 0x%08x\n", get_most_removed_instr());
 
   /* un-initialize the simulator */
   sim_uninit();
