@@ -1,0 +1,25 @@
+TO RUN THE BENCHMARKS:
+
+
+GCC:
+
+  to run:               sim-safe cc1.pisa-big -O 1stmt.i
+  to test output:       diff 1stmt.s 1stmt.s.ref
+
+COMPRESS95:
+
+  to run:               sim-safe compress95.pisa-big < compress95.in > compress95.myout
+  to test output:       diff compress95.myout compress95.out
+
+GO:
+
+  to run:               sim-safe go.pisa-big 50 9 2stone9.in > go.myout
+  to test output:       diff go.myout go.out
+
+
+The following program is no longer included in the benchmarks
+ANAGRAM:
+
+  to run:               sim-safe anagram.pisa-big words < anagram.in > anagram.myout
+  to test output:       diff anagram.myout anagram.out
+
