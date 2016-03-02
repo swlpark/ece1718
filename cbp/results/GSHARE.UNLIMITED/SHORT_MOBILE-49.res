@@ -1,0 +1,1 @@
+........  TRACE 	 : ../traces/SHORT_MOBILE-49.bt9.trace.gz  NUM_INSTRUCTIONS       	 :  110000000  NUM_CONDITIONAL_BR     	 :    8690438  NUM_MISPREDICTIONS     	 :     197528  MISPRED_PER_1K_INST    	 :     1.7957

@@ -1,0 +1,1 @@
+..  TRACE 	 : ../traces/SHORT_MOBILE-25.bt9.trace.gz  NUM_INSTRUCTIONS       	 :   99206158  NUM_BR                 	 :    2834777  NUM_ALWAYS_BR          	 :        173  NUM_CONDITIONAL_BR     	 :    2834431  NUM_NEVER_BR           	 :        173  NUM_MISPREDICTIONS     	 :        172  MISPRED_PER_1K_INST    	 :     0.0017
