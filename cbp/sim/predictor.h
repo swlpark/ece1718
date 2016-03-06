@@ -89,7 +89,8 @@ class PREDICTOR{
  int idx_lengths[NUM_BANKS];
 
  //indices to tagged tables for a given PC
- int t_indices[NUM_BANKS];
+ //int t_indices[NUM_BANKS];
+ std::vector<int> t_indices;
 
  //encodes an executed path in a 10-bit vector
  int path_history;
@@ -258,7 +259,7 @@ class PREDICTOR{
  public:
 
   // The interface to the four functions below CAN NOT be changed
-  PREDICTOR() : base_table(BASE_T_SIZE), hist_i(NUM_BANKS), hist_t0(NUM_BANKS), hist_t1(NUM_BANKS)
+  PREDICTOR() : base_table(BASE_T_SIZE), hist_i(NUM_BANKS), hist_t0(NUM_BANKS), hist_t1(NUM_BANKS), t_indices(NUM_BANKS)
   {
      std::cout << "Geometric History Lengths: \n";
      idx_lengths[0] = MAX_HIST_LEN - 1;      
