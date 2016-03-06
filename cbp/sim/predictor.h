@@ -17,7 +17,8 @@
 
 
 #define LOG_BASE   13
-#define LOG_TAGGED 12
+//#define LOG_TAGGED 12
+#define LOG_TAGGED 10
 #define NUM_BANKS 4
 //saturating counter bits
 #define SAT_BITS 3
@@ -51,11 +52,11 @@ struct folded_history
   int o_length; //original history length
   int m_length; //mod length; trailing bits after folding
 
-  void setup(int original_length, int compressed_length)
+  void setup(int orig_len, int com_len)
   {
      folded = 0;
-     o_length = original_length;
-     c_length = compressed_length;
+     o_length = orig_len;
+     c_length = com_len;
      m_length = o_length % c_length;
      assert(o_length < MAX_HIST_LEN);
   }
@@ -94,7 +95,16 @@ class PREDICTOR{
  int predictor_size;
 
  //bits to determine if new entries should be considered as valid or not for prediction
- int p_new_score;
+ int p_bias;
+
+ int sat_count_update(int & cnt, bool incr, int bound)
+ {
+   if(incr) {
+     if(cnt < bound) cnt++;
+   } else {
+     if(cnt > bound) cnt--;
+   }
+ }
 
  int base_table_index(UINT64 PC)
  {
@@ -266,7 +276,7 @@ class PREDICTOR{
      std::cout << "L[0]: " << idx_lengths[0] << std::endl;
 
      //set up geometric history lengths for each tagged table
-     for(int i = 1; i < NUM_BANKS - 1; i++)
+     for(int i = 1; i < NUM_BANKS - 1; i+=1)
      {
         int idx = NUM_BANKS - i - 1;
         double tmp = pow((double)(MAX_HIST_LEN - 1) / MIN_HIST_LEN, (double)i / (NUM_BANKS - 1));
@@ -276,111 +286,30 @@ class PREDICTOR{
      idx_lengths[NUM_BANKS - 1] = MIN_HIST_LEN;
      std::cout << "L[" << NUM_BANKS - 1 << "]: " << idx_lengths[NUM_BANKS - 1] << std::endl;
 
+     p_bias = 0;
      predictor_size = 0;
 
      //initialize tagged tables
-     for(int i = 0; i < NUM_BANKS; i++)
+     for(int i = 0; i < NUM_BANKS; i+=1)
      {
        hist_i[i].setup(idx_lengths[i], LOG_TAGGED);
        hist_t[0][i].setup(idx_lengths[i], TAG_BITS - ((i + (NUM_BANKS & 1)) / 2));
        hist_t[1][i].setup(idx_lengths[i], TAG_BITS - ((i + (NUM_BANKS & 1)) / 2) - 1);
        predictor_size += (1 << LOG_TAGGED) * (5 + TAG_BITS - ((i + (NUM_BANKS & 1)) / 2));
      }
-     std::cout << "Predictor table size = " << predictor_size << " KB\n";
- 
-     p_new_score = 0;
+     std::cout << "Predictor table size = " << predictor_size << " Bytes\n";
   }
   //btbANSF (always NT so far)
   //btbATSF (always T so far)
   //btbDYN (exhibited both NT and T)
-  bool    GetPrediction(UINT64 PC, bool btbANSF, bool btbATSF, bool btbDYN)
-  {
-    compute_t_indices(PC);
-    find_t_pred(PC);
-    if (provider_idx == NUM_BANKS)
-    {
-       alternative_pred = get_b_pred(PC);
-       return alternative_pred;
-    }
-    if (alternative_idx == NUM_BANKS)
-       alternative_pred = get_b_pred(PC);
-    else
-       alternative_pred = (tagged_table[alternative_idx][t_indices[alternative_idx]].ctr >= 0);
-
-      //AZ seznec's implemenation:
-      //if the entry is recognized as a newly allocated entry and counter p_new_score is negative use the alternate prediction
-      // see section 3.2.4
-      if (p_new_score < 0 || abs(2 * tagged_table[alternative_idx][t_indices[alternative_idx]].ctr + 1) != 1 ||
-          tagged_table[alternative_idx][t_indices[alternative_idx]].ubit != 0) {
-         return tagged_table[provider_idx][t_indices[provider_idx]].ctr >= 0;
-      }
-    return alternative_pred;
-  }  
-
-  void UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget, bool btbANSF, bool btbATSF, bool btbDYN)
-  {
-     //allocate when prediction is incorrect and provider component is not the longest length componenet
-     bool new_entry = (predDir != resolveDir) && (provider_idx > 0);
-
-     if (provider_idx < NUM_BANKS)
-     {
-        bool p_pred = tagged_table[provider_idx][t_indices[provider_idx]].ctr >= 0;
-        //is the entry recently allocated?
-        bool is_recent = (abs(2 * tagged_table[provider_idx][t_indices[provider_idx]].ctr + 1) == 1) &&
-                               (tagged_table[provider_idx][t_indices[provider_idx]].ubit == 0);
-
-       
-        if (is_recent)
-        {
-           if(resolveDir == p_pred)
-             new_entry = false;
-
-           //altpred and pred differs; p_new_score is updated
-           if(alternative_pred != p_pred) {
-             if(alternative_pred == resolveDir) {
-                if (p_new_score < 7) p_new_score += 1;
-             } 
-           }
-           else {
-             if (p_new_score > -8) p_new_score -= 1;
-           }
-
-        }
-     }
-
-     if(new_entry)
-       alloc_tagged_entry(PC, resolveDir);
-
-     //update a pred counter
-     if(provider_idx == NUM_BANKS)
-       update_base_table(PC, resolveDir);
-     else 
-       update_ctr(tagged_table[provider_idx][t_indices[provider_idx]].ctr, resolveDir, SAT_BITS);
-
-     if (alternative_pred != predDir && provider_idx < NUM_BANKS)
-     {
-       if (predDir == resolveDir) {
-          if (tagged_table[provider_idx][t_indices[provider_idx]].ubit < 3)
-              tagged_table[provider_idx][t_indices[provider_idx]].ubit ++;
-       }
-       else {
-           if (tagged_table[provider_idx][t_indices[provider_idx]].ubit > 0)
-               tagged_table[provider_idx][t_indices[provider_idx]].ubit --;
-       }
-     }
-     update_history(PC, resolveDir);
-  }
-
-  //NOT IMPLEMENTED
-  void    TrackOtherInst(UINT64 PC, OpType opType, bool branchDir, UINT64 branchTarget) {}
+  bool GetPrediction(UINT64 PC, bool btbANSF, bool btbATSF, bool btbDYN);
+  void UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget, bool btbANSF, bool btbATSF, bool btbDYN);
+  void    TrackOtherInst(UINT64 PC, OpType opType, bool branchDir, UINT64 branchTarget);
 
   //NOTE you are allowed to use btbANFS, btbATSF and btbDYN to filter updates to your predictor or make static predictions if you choose to do so
   //ECE1718: You must implement this function to return the number of kB
   //that your predictor is using. We will cbeck that it's done honestly.
-  UINT64 GetPredictorSize()
-  {
-    return predictor_size;
-  }
+  UINT64 GetPredictorSize();
 };
 
 #endif
