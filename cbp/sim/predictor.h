@@ -12,6 +12,7 @@
 #include <math.h>
 #include <bitset>
 #include <assert.h>
+#include <vector>
 #include "utils.h"
 
 //Paramemters for 64KB, 5-component TAGE tables
@@ -50,10 +51,9 @@ struct t_entry {
 struct folded_history
 {
   unsigned folded; //folded history
-  int c_length; //compression length
-  int o_length; //original history length
-  int m_length; //mod length; trailing bits after folding
-
+  unsigned c_length; //compression length
+  unsigned o_length; //original history length
+  unsigned m_length; //mod length; trailing bits after folding
   void update(history_t h)
   {
      folded = (folded << 1) | h[0];
@@ -61,16 +61,16 @@ struct folded_history
      folded ^= (folded >> c_length);
      folded = TRUNCATE(folded, c_length);
   }
-
   void setup(int orig_len, int com_len)
   {
+     assert(orig_len >= 0);
+     assert(com_len >= 0);
      folded = 0;
      o_length = orig_len;
      c_length = com_len;
      m_length = o_length % c_length;
      assert(o_length < MAX_HIST_LEN);
   }
-
 };
 
 class PREDICTOR{
@@ -107,26 +107,26 @@ class PREDICTOR{
      if(cnt > bound) cnt--;
    }
  }
-
+ 
  int base_table_index(UINT64 PC)
  {
    return TRUNCATE(PC, LOG_BASE);
  }
 
+ static bool weak_pred_counter(int cnt)
+ {
+   return (cnt == 0 || cnt == -1);
+ }
+
  int _path_hist_hash(int hist, int size, int bank)
  {
     int temp1, temp2;
-    //hist = hist & ((1 << size) - 1);
     hist = TRUNCATE(hist, size); 
-    //temp1 = (hist & ((1 << LOG_TAGGED) - 1));
     temp1 = TRUNCATE(hist, LOG_TAGGED); 
     temp2 = (hist >> LOG_TAGGED);
     temp2 = ((temp2 << bank) & ((1 << LOG_TAGGED) - 1)) + (temp2 >> (LOG_TAGGED - bank));
-    //temp2 = TRUNCATE((temp2 << bank), LOG_TAGGED) + (temp2 >> (LOG_TAGGED - bank));
-
     hist = temp1 ^ temp2;
     hist = ((hist << bank) & ((1 << LOG_TAGGED) - 1)) + (hist >> (LOG_TAGGED - bank));
-    //hist = TRUNCATE((hist << bank), LOG_TAGGED) + (hist >> (LOG_TAGGED - bank));
 
     return hist;
  }
@@ -142,7 +142,6 @@ class PREDICTOR{
    idx ^= _path_hist_hash(path_history, p_hist_length, bank);
 
    //truncate
-   //retval = retval & ((1 << LOG_TAGGED) - 1);
    return TRUNCATE(idx, LOG_TAGGED);
  }
 
@@ -157,19 +156,6 @@ class PREDICTOR{
    } else {
      if(base_table[idx].pred > -2)
        base_table[idx].pred--;
-   }
- }
-
- //update pred counter in a tagged tables
- void update_pred(int & pred, bool br_taken, int size)
- {
-   if(br_taken) {
-      if (pred < ((1 << (size - 1)) - 1))
-         pred++;
-   }
-   else {
-      if (pred > -(1 << (size - 1)))
-         pred--;
    }
  }
 
@@ -202,7 +188,7 @@ class PREDICTOR{
      for (int i = 0; i < provider_idx; i++)
         tagged_table[i][t_indices[i]].ubit -= 1;
    } else {
-   //allocate new component entry 
+     //allocate new component entry 
      if (br_taken)
        tagged_table[min_idx][t_indices[min_idx]].pred = 0;
      else
@@ -232,20 +218,10 @@ class PREDICTOR{
    }
  }
 
- //fill in t_indices table for tagged table access 
- void compute_t_indices(UINT64 PC)
- {
-    for(int i =0; i < NUM_BANKS; i++)
-    {
-      t_indices[i] = tagged_table_index(PC, i);
-    }
- }
-
  void find_t_pred(UINT64 PC)
  {
     provider_idx = NUM_BANKS;
     alternative_idx = NUM_BANKS;
-
     for(int i =0; i < NUM_BANKS; i++)
     {
 
@@ -254,7 +230,6 @@ class PREDICTOR{
         provider_idx = i;
         break;
       }
-
     }
     for(int i = provider_idx + 1; i < NUM_BANKS; i++)
     {
@@ -284,8 +259,8 @@ class PREDICTOR{
      for(int i = 1; i < NUM_BANKS - 1; i+=1)
      {
         int idx = NUM_BANKS - i - 1;
-        double tmp = pow((double)(MAX_HIST_LEN - 1) / MIN_HIST_LEN, (double)i / (NUM_BANKS - 1));
-        idx_lengths[idx] = (int) (MIN_HIST_LEN * tmp + 0.5);
+        double tmp = pow((double)(MAX_HIST_LEN - 1) / (double)MIN_HIST_LEN, (double)i / (double)(NUM_BANKS - 1));
+        idx_lengths[idx] = ceil(MIN_HIST_LEN * tmp);
         std::cout << "L[" << idx << "]: " << idx_lengths[idx] << std::endl;
      }
      idx_lengths[NUM_BANKS - 1] = MIN_HIST_LEN;
@@ -304,9 +279,7 @@ class PREDICTOR{
      }
      std::cout << "Predictor table size = " << predictor_size << " B\n";
   }
-  //btbANSF (always NT so far)
-  //btbATSF (always T so far)
-  //btbDYN (exhibited both NT and T)
+
   bool GetPrediction(UINT64 PC, bool btbANSF, bool btbATSF, bool btbDYN);
   void UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool predDir, UINT64 branchTarget, bool btbANSF, bool btbATSF, bool btbDYN);
   void    TrackOtherInst(UINT64 PC, OpType opType, bool branchDir, UINT64 branchTarget);
