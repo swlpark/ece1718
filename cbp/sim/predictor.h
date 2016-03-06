@@ -12,20 +12,19 @@
 #include <math.h>
 #include <bitset>
 #include <assert.h>
-
 #include "utils.h"
 
-
 #define LOG_BASE   13
-//#define LOG_TAGGED 12
 #define LOG_TAGGED 10
 #define NUM_BANKS 4
-//saturating counter bits
 #define SAT_BITS 3
 #define TAG_BITS 11
 
 #define MAX_HIST_LEN 131
 #define MIN_HIST_LEN 3
+
+//truncate vector by bit masking
+#define TRUNCATE(VECTOR,SIZE)   VECTOR & ((1 << SIZE) - 1)
 
 //history type
 typedef bitset<MAX_HIST_LEN> history_t;
@@ -38,10 +37,10 @@ struct b_entry {
 
 //tagged component = indexed with increasing history lengths; usef
 struct t_entry {
-  int ctr;
+  int pred;
   int tag;
   int ubit; //usefulness count
-  t_entry() : ctr(0), tag(0), ubit(0) {}
+  t_entry() : pred(0), tag(0), ubit(0) {}
 };
 
 //folded history as described by PMM paper; 
@@ -115,12 +114,18 @@ class PREDICTOR{
  int _path_hist_hash(int hist, int size, int bank)
  {
     int temp1, temp2;
-    hist = hist & ((1 << size) - 1);
-    temp1 = (hist & ((1 << LOG_TAGGED) - 1));
+    //hist = hist & ((1 << size) - 1);
+    hist = TRUNCATE(hist, size); 
+    //temp1 = (hist & ((1 << LOG_TAGGED) - 1));
+    hist = TRUNCATE(hist, LOG_TAGGED); 
     temp2 = (hist >> LOG_TAGGED);
-    temp2 = ((temp2 << bank) & ((1 << LOG_TAGGED) - 1)) + (temp2 >> (LOG_TAGGED - bank));
+    //temp2 = ((temp2 << bank) & ((1 << LOG_TAGGED) - 1)) + (temp2 >> (LOG_TAGGED - bank));
+    temp2 = TRUNCATE((temp2 << bank), LOG_TAGGED) + (temp2 >> (LOG_TAGGED - bank));
+
     hist = temp1 ^ temp2;
-    hist = ((hist << bank) & ((1 << LOG_TAGGED) - 1)) + (hist >> (LOG_TAGGED - bank));
+    //hist = ((hist << bank) & ((1 << LOG_TAGGED) - 1)) + (hist >> (LOG_TAGGED - bank));
+    hist = TRUNCATE((hist << bank), LOG_TAGGED) + (hist >> (LOG_TAGGED - bank));
+
     return hist;
  }
 
@@ -155,16 +160,16 @@ class PREDICTOR{
    }
  }
 
- //update ctr counter in a tagged tables
- void update_ctr(int & ctr, bool br_taken, int size)
+ //update pred counter in a tagged tables
+ void update_pred(int & pred, bool br_taken, int size)
  {
    if(br_taken) {
-      if (ctr < ((1 << (size - 1)) - 1))
-         ctr++;
+      if (pred < ((1 << (size - 1)) - 1))
+         pred++;
    }
    else {
-      if (ctr > -(1 << (size - 1)))
-         ctr--;
+      if (pred > -(1 << (size - 1)))
+         pred--;
    }
  }
 
@@ -199,9 +204,9 @@ class PREDICTOR{
    } else {
    //allocate new component entry 
      if (br_taken)
-       tagged_table[min_idx][t_indices[min_idx]].ctr = 0;
+       tagged_table[min_idx][t_indices[min_idx]].pred = 0;
      else
-       tagged_table[min_idx][t_indices[min_idx]].ctr = -1;
+       tagged_table[min_idx][t_indices[min_idx]].pred = -1;
      tagged_table[min_idx][t_indices[min_idx]].tag = compute_tag(PC, min_idx);
      tagged_table[min_idx][t_indices[min_idx]].ubit = 0;
    }
@@ -212,7 +217,7 @@ class PREDICTOR{
  {
    //update path history
    path_history = (path_history << 1) + (PC & 1);
-   path_history &= (1 << 10) - 1;
+   path_history = TRUNCATE(path_history ,10);
 
    //update global history
    global_history = global_history << 1;
@@ -297,7 +302,7 @@ class PREDICTOR{
        hist_t[1][i].setup(idx_lengths[i], TAG_BITS - ((i + (NUM_BANKS & 1)) / 2) - 1);
        predictor_size += (1 << LOG_TAGGED) * (5 + TAG_BITS - ((i + (NUM_BANKS & 1)) / 2));
      }
-     std::cout << "Predictor table size = " << predictor_size << " Bytes\n";
+     std::cout << "Predictor table size = " << predictor_size << " B\n";
   }
   //btbANSF (always NT so far)
   //btbATSF (always T so far)
