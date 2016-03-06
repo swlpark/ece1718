@@ -21,20 +21,23 @@ bool PREDICTOR::GetPrediction(UINT64 PC, bool btbANSF,bool btbATSF, bool btbDYN)
 
     find_t_pred(PC);
 
-    if (provider_idx == NUM_BANKS)
+    //if (provider_idx == NUM_BANKS)
+    if (provider_nomatch)
     {
        alternative_pred = get_b_pred(PC);
-       return alternative_pred;
-    }
-    if (alternative_idx == NUM_BANKS)
-       alternative_pred = get_b_pred(PC);
-    else
-       alternative_pred = (tagged_table[alternative_idx][t_indices[alternative_idx]].pred >= 0);
+       //return alternative_pred;
+    } else {
+      //if (alternative_idx == NUM_BANKS)
+      if (alternative_nomatch)
+         alternative_pred = get_b_pred(PC);
+      else
+         alternative_pred = (tagged_table[alternative_idx][t_indices[alternative_idx]].pred >= 0);
 
       if (p_bias < 0 || !weak_pred_counter(tagged_table[alternative_idx][t_indices[alternative_idx]].pred) ||
           tagged_table[alternative_idx][t_indices[alternative_idx]].ubit != 0) {
          return tagged_table[provider_idx][t_indices[provider_idx]].pred >= 0;
       }
+    }
     return alternative_pred;
 }
 
@@ -71,7 +74,8 @@ void PREDICTOR::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool 
     alloc_tagged_entry(PC, resolveDir);
 
   //update a pred counter
-  if(provider_idx == NUM_BANKS)
+  //if(provider_idx == NUM_BANKS)
+  if(provider_nomatch)
     update_base_table(PC, resolveDir);
   else {
     if (resolveDir) sat_count_update(tagged_table[provider_idx][t_indices[provider_idx]].pred, true, 7);

@@ -75,15 +75,15 @@ struct folded_history
 };
 
 class PREDICTOR{
- //b_entry base_table  [BASE_T_SIZE];
+ //prediction tables and folded history vectors
  std::vector<b_entry> base_table;
  std::vector<folded_history> hist_i;
+ std::vector<folded_history> hist_t0;
+ std::vector<folded_history> hist_t1;
  t_entry tagged_table[NUM_BANKS][TAGGED_T_SIZE];
 
+ //global branch history shift register
  history_t global_history; 
- //folded history tables for index and tag computation
- //folded_history hist_i[NUM_BANKS];
- folded_history hist_t[2][NUM_BANKS];
 
  //geometric path history bits (i.e. h[0:L(i)] in TAGE paper)
  int idx_lengths[NUM_BANKS];
@@ -93,8 +93,11 @@ class PREDICTOR{
 
  //encodes an executed path in a 10-bit vector
  int path_history;
+
+ //table tag matches set by find_t_pred() function
  int provider_idx, alternative_idx;
  bool provider_pred, alternative_pred;
+ bool provider_nomatch, alternative_nomatch;
 
  //Branch Predictor SIZE
  int predictor_size;
@@ -165,7 +168,7 @@ class PREDICTOR{
  //compute tag
  int compute_tag(UINT64 PC, int bank)
  {
-   int tag = PC ^ hist_t[0][bank].folded ^ (hist_t[1][bank].folded << 1);
+   int tag = PC ^ hist_t0[bank].folded ^ (hist_t1[bank].folded << 1);
    //truncate with variable tag lengths for different tables
    tag = TRUNCATE(tag, (TAG_BITS - ((bank + (NUM_BANKS % 2)) / 2)));
    return tag;
@@ -174,7 +177,8 @@ class PREDICTOR{
  //try to allocate a new entry if pred. is wrong
  void alloc_tagged_entry (UINT64 PC, bool br_taken)
  {
-   int min_u = 3;
+   //int min_u = 3;
+   int min_u = NUM_BANKS - 1;
    int min_idx = 0;
 
    //find the entry with the lowest usefulness count 
@@ -215,8 +219,8 @@ class PREDICTOR{
    //update tag & index folded history tables
    for(int i = 0; i < NUM_BANKS; i++)
    {
-     hist_t[0][i].update(global_history);
-     hist_t[1][i].update(global_history);
+     hist_t0[i].update(global_history);
+     hist_t1[i].update(global_history);
      hist_i[i].update(global_history);
    }
  }
@@ -242,6 +246,8 @@ class PREDICTOR{
         break;
       }
     }
+    provider_nomatch = (provider_idx == NUM_BANKS);
+    alternative_nomatch = (alternative_idx == NUM_BANKS);
  }
 
  bool get_b_pred(UINT64 PC)
@@ -252,7 +258,7 @@ class PREDICTOR{
  public:
 
   // The interface to the four functions below CAN NOT be changed
-  PREDICTOR() : base_table(BASE_T_SIZE), hist_i(NUM_BANKS)
+  PREDICTOR() : base_table(BASE_T_SIZE), hist_i(NUM_BANKS), hist_t0(NUM_BANKS), hist_t1(NUM_BANKS)
   {
      std::cout << "Geometric History Lengths: \n";
      idx_lengths[0] = MAX_HIST_LEN - 1;      
@@ -277,8 +283,8 @@ class PREDICTOR{
      for(int i = 0; i < NUM_BANKS; i+=1)
      {
        hist_i[i].setup(idx_lengths[i], LOG_TAGGED);
-       hist_t[0][i].setup(idx_lengths[i], TAG_BITS - ((i + (NUM_BANKS % 2)) / 2));
-       hist_t[1][i].setup(idx_lengths[i], TAG_BITS - ((i + (NUM_BANKS % 2)) / 2) - 1);
+       hist_t0[i].setup(idx_lengths[i], TAG_BITS - ((i + (NUM_BANKS % 2)) / 2));
+       hist_t1[i].setup(idx_lengths[i], TAG_BITS - ((i + (NUM_BANKS % 2)) / 2) - 1);
        predictor_size += TAGGED_T_SIZE * (SAT_BITS + U_BITS + TAG_BITS - ((i + (NUM_BANKS % 2)) / 2));
      }
      std::cout << "Predictor table size = " << predictor_size << " B\n";
