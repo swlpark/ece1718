@@ -13,7 +13,6 @@
 #include <bitset>
 #include <assert.h>
 #include <vector>
-#include <iterator>
 #include "utils.h"
 
 //Paramemters for 64KB, 5-component TAGE tables
@@ -23,7 +22,7 @@
 #define TAGGED_T_SIZE  (1 << LOG_TAGGED)
 #define NUM_BANKS 4
 #define SAT_BITS 3
-#define CON_BITS 2
+#define U_BITS 2
 #define TAG_BITS 11
 
 #define MAX_HIST_LEN 131
@@ -49,7 +48,7 @@ struct t_entry {
   t_entry() : pred(0), tag(0), ubit(0) {}
 };
 
-//XOR folded history as described by PMM paper; 
+//folded history as described by PMM paper; 
 struct folded_history
 {
   unsigned folded; //folded history
@@ -65,10 +64,10 @@ struct folded_history
   }
   void setup(int orig_len, int com_len)
   {
+     assert(orig_len >= 0);
      assert(com_len >= 0);
      folded = 0;
      o_length = orig_len;
-     assert(orig_len >= 0);
      c_length = com_len;
      m_length = o_length % c_length;
      assert(o_length < MAX_HIST_LEN);
@@ -76,15 +75,14 @@ struct folded_history
 };
 
 class PREDICTOR{
+ //b_entry base_table  [BASE_T_SIZE];
  std::vector<b_entry> base_table;
- std::vector<folded_history> hist_i;
- std::vector<folded_history> hist_t0;
- std::vector<folded_history> hist_t1;
  t_entry tagged_table[NUM_BANKS][TAGGED_T_SIZE];
 
+ history_t global_history; 
  //folded history tables for index and tag computation
- //folded_history hist_i[NUM_BANKS];
- //folded_history hist_t[2][NUM_BANKS];
+ folded_history hist_i[NUM_BANKS];
+ folded_history hist_t[2][NUM_BANKS];
 
  //geometric path history bits (i.e. h[0:L(i)] in TAGE paper)
  int idx_lengths[NUM_BANKS];
@@ -92,12 +90,8 @@ class PREDICTOR{
  //indices to tagged tables for a given PC
  int t_indices[NUM_BANKS];
 
- //shifts in branch taken or not taken
- history_t global_history; 
  //encodes an executed path in a 10-bit vector
  int path_history;
-
- //prediction indices & direction for provider and alternative banks
  int provider_idx, alternative_idx;
  bool provider_pred, alternative_pred;
 
@@ -143,9 +137,10 @@ class PREDICTOR{
  int tagged_table_index (UINT64 PC, int bank)
  {
    assert(bank < NUM_BANKS);
-
-   int p_hist_length = (idx_lengths[bank] >= 16) ? 16 : idx_lengths[bank];
    int idx = PC ^ (PC >> ((LOG_TAGGED - (NUM_BANKS - bank - 1)))) ^ hist_i[bank].folded;
+
+   //cap path history mixing at length 16
+   int p_hist_length = (idx_lengths[bank] >= 16) ? 16 : idx_lengths[bank];
    idx ^= _path_hist_hash(path_history, p_hist_length, bank);
 
    //truncate
@@ -169,11 +164,9 @@ class PREDICTOR{
  //compute tag
  int compute_tag(UINT64 PC, int bank)
  {
-   //int tag = PC ^ hist_t[0][bank].folded ^ (hist_t[1][bank].folded << 1);
-   int tag = PC ^ hist_t0[bank].folded ^ (hist_t1[bank].folded << 1);
-
+   int tag = PC ^ hist_t[0][bank].folded ^ (hist_t[1][bank].folded << 1);
    //truncate with variable tag lengths for different tables
-   tag = TRUNCATE(tag, (TAG_BITS - ((bank + (NUM_BANKS % 2)) / 2)));
+   tag = TRUNCATE(tag, (TAG_BITS - ((bank + (NUM_BANKS & 1)) / 2)));
    return tag;
  }
 
@@ -221,8 +214,8 @@ class PREDICTOR{
    //update tag & index folded history tables
    for(int i = 0; i < NUM_BANKS; i++)
    {
-     hist_t0[i].update(global_history);
-     hist_t1[i].update(global_history);
+     hist_t[0][i].update(global_history);
+     hist_t[1][i].update(global_history);
      hist_i[i].update(global_history);
    }
  }
@@ -258,13 +251,12 @@ class PREDICTOR{
  public:
 
   // The interface to the four functions below CAN NOT be changed
-  PREDICTOR() : base_table(BASE_T_SIZE), hist_i(NUM_BANKS), hist_t0(NUM_BANKS), hist_t1(NUM_BANKS)
+  PREDICTOR() : base_table(BASE_T_SIZE)
   {
      std::cout << "Geometric History Lengths: \n";
      idx_lengths[0] = MAX_HIST_LEN - 1;      
      std::cout << "L[0]: " << idx_lengths[0] << std::endl;
-     idx_lengths[NUM_BANKS - 1] = MIN_HIST_LEN;
-     std::cout << "L[" << NUM_BANKS - 1 << "]: " << idx_lengths[NUM_BANKS - 1] << std::endl;
+
      //set up geometric history lengths for each tagged table
      for(int i = 1; i < NUM_BANKS - 1; i+=1)
      {
@@ -273,22 +265,22 @@ class PREDICTOR{
         idx_lengths[idx] = ceil(MIN_HIST_LEN * tmp);
         std::cout << "L[" << idx << "]: " << idx_lengths[idx] << std::endl;
      }
+     idx_lengths[NUM_BANKS - 1] = MIN_HIST_LEN;
+     std::cout << "L[" << NUM_BANKS - 1 << "]: " << idx_lengths[NUM_BANKS - 1] << std::endl;
 
      p_bias = 0;
-
-     //predictor_size += (1 << LOG_TAGGED) * (5 + TAG_BITS - ((i + (NUM_BANKS & 1)) / 2));
-     //compute total predictor size; start with base predictor size.
+     //compute total storage size of tables; start with base pred table
      predictor_size = BASE_T_SIZE * SAT_BITS;
 
      //initialize tagged tables
      for(int i = 0; i < NUM_BANKS; i+=1)
      {
        hist_i[i].setup(idx_lengths[i], LOG_TAGGED);
-       hist_t0[i].setup(idx_lengths[i], TAG_BITS - ((i + (NUM_BANKS % 2)) / 2));
-       hist_t1[i].setup(idx_lengths[i], TAG_BITS - ((i + (NUM_BANKS % 2)) / 2) - 1);
-       predictor_size += TAGGED_T_SIZE * (SAT_BITS + CON_BITS + TAG_BITS - ((i + (NUM_BANKS % 2)) / 2));
+       hist_t[0][i].setup(idx_lengths[i], TAG_BITS - ((i + (NUM_BANKS % 2)) / 2));
+       hist_t[1][i].setup(idx_lengths[i], TAG_BITS - ((i + (NUM_BANKS % 2)) / 2) - 1);
+       predictor_size += TAGGED_T_SIZE * (SAT_BITS + U_BITS + TAG_BITS - ((i + (NUM_BANKS % 2)) / 2));
      }
-     std::cout << "Predictor table size (Bytes) = " << predictor_size << " B\n";
+     std::cout << "Predictor table size = " << predictor_size << " B\n";
   }
 
   bool GetPrediction(UINT64 PC, bool btbANSF, bool btbATSF, bool btbDYN);
