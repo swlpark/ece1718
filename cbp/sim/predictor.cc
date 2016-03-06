@@ -11,27 +11,21 @@
 //{
 //    //ECE1718: Your code here (if necessary).
 //}
-
 bool PREDICTOR::GetPrediction(UINT64 PC, bool btbANSF,bool btbATSF, bool btbDYN)
 {
     //ECE1718: Your code here.
     //compute indices for tagged tables
-    for(int i =0; i < NUM_BANKS; i++)
+    for(int i =0; i < t_indices.size(); i++)
       t_indices[i] = tagged_table_index(PC, i);
 
     find_t_pred(PC);
 
-    //if (provider_idx == NUM_BANKS)
     if (provider_nomatch)
     {
        alternative_pred = get_b_pred(PC);
-       //return alternative_pred;
     } else {
-      //if (alternative_idx == NUM_BANKS)
-      if (alternative_nomatch)
-         alternative_pred = get_b_pred(PC);
-      else
-         alternative_pred = (tagged_table[alternative_idx][t_indices[alternative_idx]].pred >= 0);
+      alternative_pred = (alternative_nomatch) ? get_b_pred(PC) :
+                         (tagged_table[alternative_idx][t_indices[alternative_idx]].pred >= 0);
 
       if (p_bias < 0 || !weak_pred_counter(tagged_table[alternative_idx][t_indices[alternative_idx]].pred) ||
           tagged_table[alternative_idx][t_indices[alternative_idx]].ubit != 0) {
@@ -63,25 +57,28 @@ void PREDICTOR::UpdatePredictor(UINT64 PC, OpType opType, bool resolveDir, bool 
         if(alternative_pred != p_pred)
         {
           if (alternative_pred == resolveDir)
-             sat_count_update(p_bias, true, 7);
+             sat_count_update(p_bias, true, SAT_U_BOUND);
         }
         else
-          sat_count_update(p_bias, false, -8);
+          sat_count_update(p_bias, false, SAT_L_BOUND);
      }
   }
+
   //allocate when prediction is incorrect and provider component is not the longest length componenet
   if((predDir != resolveDir) && (provider_idx > 0) && !provider_correct)
     alloc_tagged_entry(PC, resolveDir);
 
   //update a pred counter
-  //if(provider_idx == NUM_BANKS)
   if(provider_nomatch)
     update_base_table(PC, resolveDir);
   else {
-    if (resolveDir) sat_count_update(tagged_table[provider_idx][t_indices[provider_idx]].pred, true, 7);
-    else sat_count_update(tagged_table[provider_idx][t_indices[provider_idx]].pred, false, -8);
+    if (resolveDir)
+       sat_count_update(tagged_table[provider_idx][t_indices[provider_idx]].pred, true, SAT_U_BOUND);
+    else 
+       sat_count_update(tagged_table[provider_idx][t_indices[provider_idx]].pred, false, SAT_L_BOUND);
   }
 
+  //update usefulness if altpred and provider differ
   if (alternative_pred != predDir && provider_idx < NUM_BANKS)
   {
     if (predDir == resolveDir)

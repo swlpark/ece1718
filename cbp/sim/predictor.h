@@ -13,20 +13,29 @@
 #include <bitset>
 #include <assert.h>
 #include <vector>
+#include <iterator>
 #include "utils.h"
 
-//Paramemters for 64KB, 5-component TAGE tables
+//Paramemters for 5-component TAGE tables
 #define LOG_BASE   13
 #define BASE_T_SIZE    (1 << LOG_BASE)
-#define LOG_TAGGED 10
+#define LOG_TAGGED 13
 #define TAGGED_T_SIZE  (1 << LOG_TAGGED)
 #define NUM_BANKS 4
+
+//saturating pred cnt length
 #define SAT_BITS 3
+#define SAT_L_BOUND -(1 << SAT_BITS) 
+#define SAT_U_BOUND ((1 << SAT_BITS) - 1)
+
+//saturating pred cnt length
 #define U_BITS 2
 #define TAG_BITS 11
 
-#define MAX_HIST_LEN 131
-#define MIN_HIST_LEN 3
+//#define MAX_HIST_LEN 131
+//#define MIN_HIST_LEN 3
+#define MAX_HIST_LEN 128
+#define MIN_HIST_LEN 4
 
 //truncate vector by bit masking
 #define TRUNCATE(VECTOR,SIZE)   VECTOR & ((1 << SIZE) - 1)
@@ -82,15 +91,13 @@ class PREDICTOR{
  std::vector<folded_history> hist_t1;
  t_entry tagged_table[NUM_BANKS][TAGGED_T_SIZE];
 
+ //geometric path history bits (i.e. h[0:L(i)] in TAGE paper)
+ std::vector<int> idx_lengths;
+ //indices to tagged tables for a given PC
+ std::vector<int> t_indices;
+
  //global branch history shift register
  history_t global_history; 
-
- //geometric path history bits (i.e. h[0:L(i)] in TAGE paper)
- int idx_lengths[NUM_BANKS];
-
- //indices to tagged tables for a given PC
- //int t_indices[NUM_BANKS];
- std::vector<int> t_indices;
 
  //encodes an executed path in a 10-bit vector
  int path_history;
@@ -259,7 +266,8 @@ class PREDICTOR{
  public:
 
   // The interface to the four functions below CAN NOT be changed
-  PREDICTOR() : base_table(BASE_T_SIZE), hist_i(NUM_BANKS), hist_t0(NUM_BANKS), hist_t1(NUM_BANKS), t_indices(NUM_BANKS)
+  PREDICTOR() : base_table(BASE_T_SIZE), hist_i(NUM_BANKS), hist_t0(NUM_BANKS), hist_t1(NUM_BANKS),
+                t_indices(NUM_BANKS), idx_lengths(NUM_BANKS)
   {
      std::cout << "Geometric History Lengths: \n";
      idx_lengths[0] = MAX_HIST_LEN - 1;      
@@ -288,7 +296,10 @@ class PREDICTOR{
        hist_t1[i].setup(idx_lengths[i], TAG_BITS - ((i + (NUM_BANKS % 2)) / 2) - 1);
        predictor_size += TAGGED_T_SIZE * (SAT_BITS + U_BITS + TAG_BITS - ((i + (NUM_BANKS % 2)) / 2));
      }
-     std::cout << "Predictor table size = " << predictor_size << " B\n";
+     int size_in_KB = (predictor_size / 8);
+     size_in_KB = (size_in_KB / 1024);
+
+     std::cout << "Predictor table size = " << size_in_KB << " KB \n";
   }
 
   bool GetPrediction(UINT64 PC, bool btbANSF, bool btbATSF, bool btbDYN);
