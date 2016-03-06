@@ -77,11 +77,12 @@ struct folded_history
 class PREDICTOR{
  //b_entry base_table  [BASE_T_SIZE];
  std::vector<b_entry> base_table;
+ std::vector<folded_history> hist_i;
  t_entry tagged_table[NUM_BANKS][TAGGED_T_SIZE];
 
  history_t global_history; 
  //folded history tables for index and tag computation
- folded_history hist_i[NUM_BANKS];
+ //folded_history hist_i[NUM_BANKS];
  folded_history hist_t[2][NUM_BANKS];
 
  //geometric path history bits (i.e. h[0:L(i)] in TAGE paper)
@@ -166,7 +167,7 @@ class PREDICTOR{
  {
    int tag = PC ^ hist_t[0][bank].folded ^ (hist_t[1][bank].folded << 1);
    //truncate with variable tag lengths for different tables
-   tag = TRUNCATE(tag, (TAG_BITS - ((bank + (NUM_BANKS & 1)) / 2)));
+   tag = TRUNCATE(tag, (TAG_BITS - ((bank + (NUM_BANKS % 2)) / 2)));
    return tag;
  }
 
@@ -251,7 +252,7 @@ class PREDICTOR{
  public:
 
   // The interface to the four functions below CAN NOT be changed
-  PREDICTOR() : base_table(BASE_T_SIZE)
+  PREDICTOR() : base_table(BASE_T_SIZE), hist_i(NUM_BANKS)
   {
      std::cout << "Geometric History Lengths: \n";
      idx_lengths[0] = MAX_HIST_LEN - 1;      
