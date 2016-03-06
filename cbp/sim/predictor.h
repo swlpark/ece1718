@@ -96,7 +96,7 @@ class PREDICTOR{
  //bits to determine if new entries should be considered as valid or not for prediction
  int p_bias;
 
- int sat_count_update(int & cnt, bool incr, int bound)
+ void sat_count_update(int & cnt, bool incr, int bound)
  {
    if(incr) {
      if(cnt < bound) cnt++;
@@ -107,24 +107,23 @@ class PREDICTOR{
 
  int base_table_index(UINT64 PC)
  {
-   return PC & ((1 << LOG_BASE) - 1);
+   return TRUNCATE(PC, LOG_BASE);
  }
 
- //referenced AZ's original tage implementation
  int _path_hist_hash(int hist, int size, int bank)
  {
     int temp1, temp2;
     //hist = hist & ((1 << size) - 1);
     hist = TRUNCATE(hist, size); 
     //temp1 = (hist & ((1 << LOG_TAGGED) - 1));
-    hist = TRUNCATE(hist, LOG_TAGGED); 
+    temp1 = TRUNCATE(hist, LOG_TAGGED); 
     temp2 = (hist >> LOG_TAGGED);
-    //temp2 = ((temp2 << bank) & ((1 << LOG_TAGGED) - 1)) + (temp2 >> (LOG_TAGGED - bank));
-    temp2 = TRUNCATE((temp2 << bank), LOG_TAGGED) + (temp2 >> (LOG_TAGGED - bank));
+    temp2 = ((temp2 << bank) & ((1 << LOG_TAGGED) - 1)) + (temp2 >> (LOG_TAGGED - bank));
+    //temp2 = TRUNCATE((temp2 << bank), LOG_TAGGED) + (temp2 >> (LOG_TAGGED - bank));
 
     hist = temp1 ^ temp2;
-    //hist = ((hist << bank) & ((1 << LOG_TAGGED) - 1)) + (hist >> (LOG_TAGGED - bank));
-    hist = TRUNCATE((hist << bank), LOG_TAGGED) + (hist >> (LOG_TAGGED - bank));
+    hist = ((hist << bank) & ((1 << LOG_TAGGED) - 1)) + (hist >> (LOG_TAGGED - bank));
+    //hist = TRUNCATE((hist << bank), LOG_TAGGED) + (hist >> (LOG_TAGGED - bank));
 
     return hist;
  }
@@ -133,17 +132,15 @@ class PREDICTOR{
  int tagged_table_index (UINT64 PC, int bank)
  {
    assert(bank < NUM_BANKS);
-   int retval = PC ^ (PC >> ((LOG_TAGGED - (NUM_BANKS - bank - 1)))) ^ hist_i[bank].folded;
+   int idx = PC ^ (PC >> ((LOG_TAGGED - (NUM_BANKS - bank - 1)))) ^ hist_i[bank].folded;
 
    //cap path history mixing at length 16
-   if (idx_lengths[bank] >= 16)
-     retval ^= _path_hist_hash(path_history, 16, bank);
-   else
-     retval ^= _path_hist_hash(path_history, idx_lengths[bank], bank);
+   int p_hist_length = (idx_lengths[bank] >= 16) ? 16 : idx_lengths[bank];
+   idx ^= _path_hist_hash(path_history, p_hist_length, bank);
 
    //truncate
-   retval = retval & ((1 << LOG_TAGGED) - 1);
-   return retval;
+   //retval = retval & ((1 << LOG_TAGGED) - 1);
+   return TRUNCATE(idx, LOG_TAGGED);
  }
 
  //update saturating counter in the base table;
@@ -217,7 +214,7 @@ class PREDICTOR{
  {
    //update path history
    path_history = (path_history << 1) + (PC & 1);
-   path_history = TRUNCATE(path_history ,10);
+   path_history = TRUNCATE(path_history, 10);
 
    //update global history
    global_history = global_history << 1;
