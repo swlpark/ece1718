@@ -14,8 +14,11 @@
 #include <assert.h>
 #include "utils.h"
 
+//Paramemters for 64KB, 5-component TAGE tables
 #define LOG_BASE   13
+#define BASE_T_SIZE    (1 << LOG_BASE)
 #define LOG_TAGGED 10
+#define TAGGED_T_SIZE  (1 << LOG_TAGGED)
 #define NUM_BANKS 4
 #define SAT_BITS 3
 #define TAG_BITS 11
@@ -51,6 +54,14 @@ struct folded_history
   int o_length; //original history length
   int m_length; //mod length; trailing bits after folding
 
+  void update(history_t h)
+  {
+     folded = (folded << 1) | h[0];
+     folded ^= h[o_length] << m_length;
+     folded ^= (folded >> c_length);
+     folded = TRUNCATE(folded, c_length);
+  }
+
   void setup(int orig_len, int com_len)
   {
      folded = 0;
@@ -60,21 +71,13 @@ struct folded_history
      assert(o_length < MAX_HIST_LEN);
   }
 
-  void update(history_t h)
-  {
-     folded = (folded << 1) | h[0];
-     folded ^= h[o_length] << m_length;
-     folded ^= (folded >> c_length);
-     folded &= (1 << c_length) - 1;
-  }
 };
 
 class PREDICTOR{
- b_entry base_table  [1 << LOG_BASE];
- t_entry tagged_table[NUM_BANKS][1 << LOG_TAGGED];
+ b_entry base_table  [BASE_T_SIZE];
+ t_entry tagged_table[NUM_BANKS][TAGGED_T_SIZE];
 
  history_t global_history; 
-
  //folded history tables for index and tag computation
  folded_history hist_i[NUM_BANKS];
  folded_history hist_t[2][NUM_BANKS];
@@ -174,8 +177,8 @@ class PREDICTOR{
  int compute_tag(UINT64 PC, int bank)
  {
    int tag = PC ^ hist_t[0][bank].folded ^ (hist_t[1][bank].folded << 1);
-   //use variable tag lengths for different tables
-   tag &= ((1 << (TAG_BITS - ((bank + (NUM_BANKS & 1)) / 2))) - 1);
+   //truncate with variable tag lengths for different tables
+   tag = TRUNCATE(tag, (TAG_BITS - ((bank + (NUM_BANKS & 1)) / 2)));
    return tag;
  }
 
