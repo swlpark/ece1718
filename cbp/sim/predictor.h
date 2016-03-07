@@ -30,10 +30,8 @@
 
 //saturating pred cnt length
 #define U_BITS 2
-#define TAG_BITS 11
+#define TAG_BITS 10
 
-//#define MAX_HIST_LEN 131
-//#define MIN_HIST_LEN 3
 #define MAX_HIST_LEN 128
 #define MIN_HIST_LEN 4
 
@@ -79,6 +77,7 @@ struct folded_history
      o_length = orig_len;
      c_length = com_len;
      m_length = o_length % c_length;
+
      assert(o_length < MAX_HIST_LEN);
   }
 };
@@ -132,6 +131,7 @@ class PREDICTOR{
    return (cnt == 0 || cnt == -1);
  }
 
+ //hash path history info
  int _path_hist_hash(int hist, int size, int bank)
  {
     int temp1, temp2;
@@ -141,7 +141,6 @@ class PREDICTOR{
     temp2 = ((temp2 << bank) & ((1 << LOG_TAGGED) - 1)) + (temp2 >> (LOG_TAGGED - bank));
     hist = temp1 ^ temp2;
     hist = ((hist << bank) & ((1 << LOG_TAGGED) - 1)) + (hist >> (LOG_TAGGED - bank));
-
     return hist;
  }
 
@@ -150,12 +149,10 @@ class PREDICTOR{
  {
    assert(bank < NUM_BANKS);
    int idx = PC ^ (PC >> ((LOG_TAGGED - (NUM_BANKS - bank - 1)))) ^ hist_i[bank].folded;
-
-   //cap path history mixing at length 16
-   int p_hist_length = (idx_lengths[bank] >= 16) ? 16 : idx_lengths[bank];
+   int p_hist_length = (idx_lengths[bank] >= LOG_TAGGED) ? LOG_TAGGED : idx_lengths[bank];
    idx ^= _path_hist_hash(path_history, p_hist_length, bank);
 
-   //truncate
+   //truncate the hashed idx
    return TRUNCATE(idx, LOG_TAGGED);
  }
 
@@ -178,7 +175,7 @@ class PREDICTOR{
  {
    int tag = PC ^ hist_t0[bank].folded ^ (hist_t1[bank].folded << 1);
    //truncate with variable tag lengths for different tables
-   tag = TRUNCATE(tag, (TAG_BITS - ((bank + (NUM_BANKS % 2)) / 2)));
+   tag = TRUNCATE(tag, TAG_BITS);
    return tag;
  }
 
@@ -217,8 +214,10 @@ class PREDICTOR{
  void update_history(UINT64 PC, bool br_taken)
  {
    //update path history
-   path_history = (path_history << 1) + (PC & 1);
-   path_history = TRUNCATE(path_history, 10);
+   //path_history = (path_history << 1) + (PC & 1);
+   path_history = (path_history << 1);
+   path_history += ((PC & 2) == 2) ? 1 : 0;
+   path_history = TRUNCATE(path_history, LOG_TAGGED << 1);
 
    //update global history
    global_history = global_history << 1;
@@ -270,14 +269,17 @@ class PREDICTOR{
                 t_indices(NUM_BANKS), idx_lengths(NUM_BANKS)
   {
      std::cout << "Geometric History Lengths: \n";
-     idx_lengths[0] = MAX_HIST_LEN - 1;      
+     idx_lengths[0] = MAX_HIST_LEN- 1;      
      std::cout << "L[0]: " << idx_lengths[0] << std::endl;
 
      //set up geometric history lengths for each tagged table
+     //the longest history length is at L[0] = MAX_HIST -1
+     //the shortest history length is at L[NUM-BANKS-1] = MIN_HIST
+     //not exactly geometric, but that's okay
      for(int i = 1; i < NUM_BANKS - 1; i+=1)
      {
         int idx = NUM_BANKS - i - 1;
-        double tmp = pow((double)(MAX_HIST_LEN - 1) / (double)MIN_HIST_LEN, (double)i / (double)(NUM_BANKS - 1));
+        double tmp = pow((double)(MAX_HIST_LEN) / (double) MIN_HIST_LEN, (double)i / (double)(NUM_BANKS - 1));
         idx_lengths[idx] = ceil(MIN_HIST_LEN * tmp);
         std::cout << "L[" << idx << "]: " << idx_lengths[idx] << std::endl;
      }
@@ -292,9 +294,9 @@ class PREDICTOR{
      for(int i = 0; i < NUM_BANKS; i+=1)
      {
        hist_i[i].setup(idx_lengths[i], LOG_TAGGED);
-       hist_t0[i].setup(idx_lengths[i], TAG_BITS - ((i + (NUM_BANKS % 2)) / 2));
-       hist_t1[i].setup(idx_lengths[i], TAG_BITS - ((i + (NUM_BANKS % 2)) / 2) - 1);
-       predictor_size += TAGGED_T_SIZE * (SAT_BITS + U_BITS + TAG_BITS - ((i + (NUM_BANKS % 2)) / 2));
+       hist_t0[i].setup(idx_lengths[i], TAG_BITS);
+       hist_t1[i].setup(idx_lengths[i], TAG_BITS - 1);
+       predictor_size += TAGGED_T_SIZE * (SAT_BITS + U_BITS + TAG_BITS);
      }
      int size_in_KB = (predictor_size / 8);
      size_in_KB = (size_in_KB / 1024);
