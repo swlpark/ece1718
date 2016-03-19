@@ -1,0 +1,28 @@
+Geometric History Lengths: 
+L[0]: 127
+L[2]: 13
+L[1]: 41
+L[3]: 4
+Predictor table size = 63 KB 
+..
+  TRACE 	 : ../traces/SHORT_MOBILE-25.bt9.trace.gz
+  NUM_INSTRUCTIONS            	 :   99206158
+  NUM_BR                      	 :    2834777
+  NUM_UNCOND_BR               	 :          0
+  NUM_CONDITIONAL_BR          	 :    2834777
+  NUM_CONDITIONAL_BR_BTB_MISS 	 :          3
+  NUM_CONDITIONAL_BR_BTB_ANSF 	 :        172
+  NUM_CONDITIONAL_BR_BTB_ATSF 	 :      16555
+  NUM_CONDITIONAL_BR_BTB_DYN  	 :    2818047
+  NUM_MISPREDICTIONS          	 :        174
+  NUM_MISPREDICTIONS_BTB_MISS 	 :          1
+  NUM_MISPREDICTIONS_BTB_ANSF 	 :          0
+  NUM_MISPREDICTIONS_BTB_ATSF 	 :          1
+  NUM_MISPREDICTIONS_BTB_DYN  	 :        172
+  MISPRED_PER_1K_INST         	 :     0.0018
+  MISPRED_PER_1K_INST_BTB_MISS	 :     0.0000
+  MISPRED_PER_1K_INST_BTB_ANSF	 :     0.0000
+  MISPRED_PER_1K_INST_BTB_ATSF	 :     0.0000
+  MISPRED_PER_1K_INST_BTB_DYN 	 :     0.0017
+  TOTAL PRED. SIZE\t :     516096
+
