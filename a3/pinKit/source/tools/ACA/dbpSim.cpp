@@ -62,6 +62,14 @@ KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
 KNOB<BOOL> KnobValues(KNOB_MODE_WRITEONCE, "pintool",
     "values", "1", "Output memory values reads and written");
 
+KNOB<int> L1_cache_total_kb(KNOB_MODE_WRITEONCE, "pintool", "l1s", 64, "set L1 cache total size in KB");
+KNOB<int> L1_cache_block_b(KNOB_MODE_WRITEONCE, "pintool", "l1b", 64, "set L1 cache block size in Bytes");
+KNOB<int> L1_cache_assoc_w(KNOB_MODE_WRITEONCE, "pintool", "l1w", 4, "set L1 cache ways");
+
+KNOB<int> L2_cache_total_kb(KNOB_MODE_WRITEONCE, "pintool", "l2s", 1024, "set L2 cache total size in KB");
+KNOB<int> L2_cache_block_b(KNOB_MODE_WRITEONCE, "pintool", "l2b", 64, "set L2 cache block size in Bytes");
+KNOB<int> L2_cache_assoc_w(KNOB_MODE_WRITEONCE, "pintool", "l2w", 16, "set L2 cache ways");
+
 /* ===================================================================== */
 /* Print Help Message                                                    */
 /* ===================================================================== */
