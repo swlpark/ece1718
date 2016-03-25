@@ -44,15 +44,21 @@ END_LEGAL */
 // - markj sutherland
 
 #include "pin.H"
+#include "cacheSim.h"
 #include "gzstream.hpp"
 #include <iostream>
 #include <fstream>
 #include <iomanip>
+
 /* ===================================================================== */
 /* Global Variables */
 /* ===================================================================== */
 gz::ogzstream TraceFile;
 static UINT64 instCount = 0;
+
+cacheSim * L1_I_CACHE;
+cacheSim * L1_D_CACHE;
+cacheSim * L2_CACHE;
 
 /* ===================================================================== */
 /* Commandline Switches */
@@ -62,13 +68,13 @@ KNOB<string> KnobOutputFile(KNOB_MODE_WRITEONCE, "pintool",
 KNOB<BOOL> KnobValues(KNOB_MODE_WRITEONCE, "pintool",
     "values", "1", "Output memory values reads and written");
 
-KNOB<int> L1_cache_total_kb(KNOB_MODE_WRITEONCE, "pintool", "l1s", 64, "set L1 cache total size in KB");
-KNOB<int> L1_cache_block_b(KNOB_MODE_WRITEONCE, "pintool", "l1b", 64, "set L1 cache block size in Bytes");
-KNOB<int> L1_cache_assoc_w(KNOB_MODE_WRITEONCE, "pintool", "l1w", 4, "set L1 cache ways");
+KNOB<int> L1_cache_total_kb(KNOB_MODE_WRITEONCE, "pintool", "l1s", "64", "set L1 cache total size in KB");
+KNOB<int> L1_cache_block_b(KNOB_MODE_WRITEONCE, "pintool", "l1b", "64", "set L1 cache block size in Bytes");
+KNOB<int> L1_cache_assoc_w(KNOB_MODE_WRITEONCE, "pintool", "l1w", "4", "set L1 cache ways");
 
-KNOB<int> L2_cache_total_kb(KNOB_MODE_WRITEONCE, "pintool", "l2s", 1024, "set L2 cache total size in KB");
-KNOB<int> L2_cache_block_b(KNOB_MODE_WRITEONCE, "pintool", "l2b", 64, "set L2 cache block size in Bytes");
-KNOB<int> L2_cache_assoc_w(KNOB_MODE_WRITEONCE, "pintool", "l2w", 16, "set L2 cache ways");
+KNOB<int> L2_cache_total_kb(KNOB_MODE_WRITEONCE, "pintool", "l2s", "1024", "set L2 cache total size in KB");
+KNOB<int> L2_cache_block_b(KNOB_MODE_WRITEONCE, "pintool", "l2b", "64", "set L2 cache block size in Bytes");
+KNOB<int> L2_cache_assoc_w(KNOB_MODE_WRITEONCE, "pintool", "l2w", "16", "set L2 cache ways");
 
 /* ===================================================================== */
 /* Print Help Message                                                    */
@@ -88,11 +94,12 @@ static INT32 Usage()
     return -1;
 }
 
-static VOID RecordMem(VOID * ip, CHAR r)
+//L2 Data Cache Access - Read 
+static VOID RecordMemRead(VOID * ip, VOID * addr)
 {
-    TraceFile << "@ " << dec << instCount << ", " << hex
-              << ip << ": " << r ;
-    TraceFile << endl;
+    L1_D_CACHE->access((size_t)addr, false);
+
+    TraceFile << "@ " << dec << instCount << ", " << hex << ip << ": " << addr << " READ\n" ;
 }
 
 static VOID * WriteAddr;
@@ -102,34 +109,39 @@ static VOID RecordWriteAddr(VOID * addr)
     WriteAddr = addr;
 }
 
-
+//L2 Data Cache Access - Write 
 static VOID RecordMemWrite(VOID * ip)
 {
-    RecordMem(ip, 'W');
+    L1_D_CACHE->access((size_t)ip , true);
+
+    TraceFile << "@ " << dec << instCount << ", " << hex << ip << ": " << WriteAddr << " WRITE\n" ;
 }
 
-VOID countFunc() { instCount++; }
+//L1 Instruction Cache Access 
+VOID countFunc(VOID * ip)
+{
+  L1_I_CACHE->access((size_t)ip , false);
+  instCount++;
+}
 
 VOID Instruction(INS ins, VOID *v)
 {
-    INS_InsertCall(ins,IPOINT_BEFORE,(AFUNPTR)countFunc,IARG_END);
+    INS_InsertCall(ins,IPOINT_BEFORE,(AFUNPTR)countFunc, IARG_INST_PTR, IARG_END);
+
     // instruments loads using a predicated call, i.e.
     // the call happens iff the load will be actually executed
     if (INS_IsMemoryRead(ins))
     {
         INS_InsertPredicatedCall(
-            ins, IPOINT_BEFORE, (AFUNPTR)RecordMem,
-            IARG_INST_PTR,
-            IARG_UINT32, 'R',
+            ins, IPOINT_BEFORE, (AFUNPTR)RecordMemRead,
+            IARG_INST_PTR, IARG_MEMORYREAD_EA,
             IARG_END);
     }
-
     if (INS_HasMemoryRead2(ins))
     {
         INS_InsertPredicatedCall(
-            ins, IPOINT_BEFORE, (AFUNPTR)RecordMem,
-            IARG_INST_PTR,
-            IARG_UINT32, 'R',
+            ins, IPOINT_BEFORE, (AFUNPTR)RecordMemRead,
+            IARG_INST_PTR, IARG_MEMORYREAD2_EA,
             IARG_END);
     }
 
@@ -156,7 +168,6 @@ VOID Instruction(INS ins, VOID *v)
                 IARG_INST_PTR,
                 IARG_END);
         }
-        
     }
 }
 
@@ -164,6 +175,24 @@ VOID Instruction(INS ins, VOID *v)
 
 VOID Fini(INT32 code, VOID *v)
 {
+    TraceFile << "\ndbpSim: Cache Statistics : " << std::endl;
+    TraceFile << "==============================================" << std::endl;
+    TraceFile << std::dec;
+    TraceFile << "L1 I_CACHE ACCESS COUNT: " << L1_I_CACHE->get_access_cnt() << std::endl;
+    TraceFile << "L1 D_CACHE ACCESS COUNT: " << L1_D_CACHE->get_access_cnt() << std::endl;
+
+    TraceFile << "L1 I_CACHE MISS COUNT: " << L1_I_CACHE->get_miss_cnt() << std::endl;
+    TraceFile << "L1 D_CACHE MISS COUNT: " << L1_D_CACHE->get_miss_cnt() << std::endl;
+
+    TraceFile << "L2 ACCESS COUNT: " << L2_CACHE->get_access_cnt() << std::endl;
+    TraceFile << "L2 CACHE MISS COUNT: " << L2_CACHE->get_miss_cnt() << std::endl;
+
+    TraceFile << "==============================================" << std::endl;
+
+    delete L2_CACHE;
+    delete L1_I_CACHE;
+    delete L1_D_CACHE;
+
     TraceFile << "#eof" << endl;
     TraceFile.close();
 }
@@ -177,7 +206,6 @@ int main(int argc, char *argv[])
     string trace_header = string("#\n"
                                  "# Memory Access Trace Generated By Pin\n"
                                  "#\n");
-    
     if( PIN_Init(argc,argv) )
     {
         return Usage();
@@ -186,12 +214,26 @@ int main(int argc, char *argv[])
     TraceFile.open(KnobOutputFile.Value().c_str());
     TraceFile.write(trace_header.c_str(),trace_header.size());
     TraceFile.setf(ios::showbase);
+
+    std::cout << "\ndbpSim: Cache Configuration : " << std::endl;
+    std::cout << "==============================================" << std::endl;
+    std::cout << "L1 Cache Size (KB): " << L1_cache_total_kb.Value() << std::endl;
+    std::cout << "L1 Block Size (B): " << L1_cache_block_b.Value() << std::endl;
+    std::cout << "L1 Set Ways (B): " << L1_cache_assoc_w.Value() << std::endl;
     
+    std::cout << "L2 Cache Size (KB): " << L2_cache_total_kb.Value() << std::endl;
+    std::cout << "L2 Block Size (B): " << L2_cache_block_b.Value() << std::endl;
+    std::cout << "L2 Set Ways (B): " << L2_cache_assoc_w.Value() << std::endl;
+    std::cout << "==============================================\n" << std::endl;
+
+    L2_CACHE = new cacheSim(L2_cache_total_kb.Value(), L2_cache_block_b.Value(), L2_cache_assoc_w.Value(), 0); 
+    L1_I_CACHE = new cacheSim(L1_cache_total_kb.Value(), L1_cache_block_b.Value(), L1_cache_assoc_w.Value(), L2_CACHE); 
+    L1_D_CACHE = new cacheSim(L1_cache_total_kb.Value(), L1_cache_block_b.Value(), L1_cache_assoc_w.Value(), L2_CACHE); 
+
     INS_AddInstrumentFunction(Instruction, 0);
     PIN_AddFiniFunction(Fini, 0);
 
     // Never returns
-
     PIN_StartProgram();
     
     RecordMemWrite(0);

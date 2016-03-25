@@ -4,28 +4,40 @@
 #include <list>
 #include <vector>
 #include <iterator>
-#include <iterator>
+#include <cassert>
+#include <iostream>
 
-struct cacheEntry
+struct Entry
 {
-
-}
+  bool dirty;
+  size_t tag;
+};
 
 class cacheSim 
 {
-  //cache
+  //cache size params
   int total_size_kb;
   int block_size_b;
   int set_ways;
 
-  cacheSim * parent_cache;
+  //address bit widths
+  int set_bits;
+  int blk_offs;
 
-  std::vector<std::list<cacheEntry>>
-  cacheSim(int, int, int)
+  int rd_cnt;
+  int wr_cnt;
+  int cache_miss;
+
+  cacheSim * parent_cache;
+  std::vector< std::list<Entry> > sets;
 
 public :
+  cacheSim(int, int, int, cacheSim*);
+
   //size_t address = reinterpret_cast<size_t>(voidptr);
-  bool cache_access(size_t addr);
+  void access(size_t, bool);
+  int get_access_cnt();
+  int get_miss_cnt();
 
 };
 
