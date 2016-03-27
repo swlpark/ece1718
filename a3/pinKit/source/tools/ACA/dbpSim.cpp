@@ -99,8 +99,9 @@ static INT32 Usage()
 static VOID RecordMemRead(VOID * ip, VOID * addr)
 {
     L1_D_CACHE->access((size_t)addr, (size_t)ip, false);
-
+#ifdef _DEBUG_
     TraceFile << "@ " << dec << instCount << ", " << hex << ip << ": " << addr << " READ\n" ;
+#endif
 }
 
 static VOID * WriteAddr;
@@ -113,8 +114,9 @@ static VOID RecordWriteAddr(VOID * addr)
 static VOID RecordMemWrite(VOID * ip)
 {
     L1_D_CACHE->access((size_t)WriteAddr, (size_t)ip, true);
-
+#ifdef _DEBUG_
     TraceFile << "@ " << dec << instCount << ", " << hex << ip << ": " << WriteAddr << " WRITE\n" ;
+#endif
 }
 
 //L1 Instruction Cache Access 

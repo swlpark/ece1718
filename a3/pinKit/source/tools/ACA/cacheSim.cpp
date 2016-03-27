@@ -70,9 +70,15 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
        it->path_hist += pc;
        it->path_hist &= ((1 << blk_offs) - 1);
 
+       
        //NOT AT MRU position; check for dead block prediction
        if (tag_bits != set.back().tag) {
+         size_t blk_addr = (tag_bits << (blk_offs + set_bits)) | (set_idx << blk_offs);
 
+         if (tr_hist_tbl.find(blk_addr)!= tr_hist_tbl.end()) {
+            if(tr_hist_tbl[blk_addr].trace == it->path_hist && tr_hist_tbl[blk_addr].confidence)
+              dead_blk_cnt++;
+         }
        }
 
        //LRU position update for the hit block
@@ -103,7 +109,7 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
     {
       //eviction required
       bool is_dirty = set.front().dirty;
-      size_t evicted_addr = (set.front().tag << (blk_offs + set_bits)) | set_idx << (set_bits);
+      size_t evicted_addr = (set.front().tag << (blk_offs + set_bits)) | (set_idx << blk_offs);
       size_t evicted_trace = set.front().path_hist;
 
       set.pop_front();
@@ -116,10 +122,11 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
         tr_hist_tbl[evicted_addr] = new_tr;
 
       } else {
-        if(tr_hist_tbl[evicted_addr].trace == evicted_trace)
+        if(tr_hist_tbl[evicted_addr].trace == evicted_trace) {
           tr_hist_tbl[evicted_addr].confidence = true;
-        else
+        } else {
           tr_hist_tbl[evicted_addr].confidence = false;
+        }
       }
 
       if(is_dirty && parent_cache) 
