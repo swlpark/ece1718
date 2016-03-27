@@ -1,16 +1,19 @@
 #ifndef _CACHE_SIM_H_
 #define _CACHE_SIM_H_
 
+#include <map>
 #include <list>
 #include <vector>
 #include <iterator>
 #include <cassert>
 #include <iostream>
+#include "dbpAndPrefetch.h"
 
 struct Entry
 {
   bool dirty;
   size_t tag;
+  size_t path_hist;
 };
 
 class cacheSim 
@@ -27,6 +30,7 @@ class cacheSim
   int rd_cnt;
   int wr_cnt;
   int cache_miss;
+  int dead_blk_cnt;
 
   cacheSim * parent_cache;
   std::vector< std::list<Entry> > sets;
@@ -34,10 +38,10 @@ class cacheSim
 public :
   cacheSim(int, int, int, cacheSim*);
 
-  //size_t address = reinterpret_cast<size_t>(voidptr);
-  void access(size_t, bool);
+  void access(size_t, size_t, bool);
   int get_access_cnt();
   int get_miss_cnt();
+  int get_dead_cnt();
 
 };
 

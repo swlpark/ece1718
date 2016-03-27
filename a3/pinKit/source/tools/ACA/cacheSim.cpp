@@ -19,7 +19,7 @@ static inline int LOGB2C(int num)
 
 
 cacheSim::cacheSim(int t_sz_kb, int b_sz_b, int ways, cacheSim* parent)
- : rd_cnt(0), wr_cnt(0), cache_miss(0), parent_cache(parent)
+ : rd_cnt(0), wr_cnt(0), cache_miss(0), dead_blk_cnt(0), parent_cache(parent)
 {
   assert(IS_POW_2(b_sz_b));
   total_size_kb = t_sz_kb;
@@ -34,7 +34,7 @@ cacheSim::cacheSim(int t_sz_kb, int b_sz_b, int ways, cacheSim* parent)
   sets.resize(num_sets, std::list<Entry>());
 }
 
-void cacheSim::access(size_t addr, bool wr_access)
+void cacheSim::access(size_t addr, size_t pc, bool wr_access)
 {
   if (wr_access)
   {
@@ -59,6 +59,7 @@ void cacheSim::access(size_t addr, bool wr_access)
     assert(false);
   } 
   std::list<Entry> & set = sets.at(set_idx);
+  assert(set.size() <= (unsigned) set_ways); 
 
   Entry hit_blk;
   for(std::list<Entry>::iterator it = set.begin(); it != set.end(); it++)
@@ -66,6 +67,13 @@ void cacheSim::access(size_t addr, bool wr_access)
      if (it->tag == tag_bits) {
        cache_hit = true;
        it->dirty = wr_access;
+       it->path_hist += pc;
+       it->path_hist &= ((1 << blk_offs) - 1);
+
+       //NOT AT MRU position; check for dead block prediction
+       if (tag_bits != set.back().tag) {
+
+       }
 
        //LRU position update for the hit block
        hit_blk = *it; 
@@ -82,11 +90,12 @@ void cacheSim::access(size_t addr, bool wr_access)
    
     //i.e. query L2 cache for the missing block
     if(parent_cache) 
-      parent_cache->access(addr, wr_access);
+      parent_cache->access(addr, pc, wr_access);
 
     Entry n_blk; 
     n_blk.tag = tag_bits;
     n_blk.dirty = wr_access;
+    n_blk.path_hist = pc & ((1 << blk_offs) - 1);
 
     if((int)set.size() < set_ways) {
       set.push_back(n_blk);
@@ -94,12 +103,27 @@ void cacheSim::access(size_t addr, bool wr_access)
     {
       //eviction required
       bool is_dirty = set.front().dirty;
-      size_t evicted_addr = set.front().tag;
+      size_t evicted_addr = (set.front().tag << (blk_offs + set_bits)) | set_idx << (set_bits);
+      size_t evicted_trace = set.front().path_hist;
+
       set.pop_front();
       set.push_back(n_blk);
 
+      if (tr_hist_tbl.find(evicted_addr) == tr_hist_tbl.end() ) {
+        TraceEntry new_tr;
+        new_tr.confidence = false;
+        new_tr.trace = evicted_trace;
+        tr_hist_tbl[evicted_addr] = new_tr;
+
+      } else {
+        if(tr_hist_tbl[evicted_addr].trace == evicted_trace)
+          tr_hist_tbl[evicted_addr].confidence = true;
+        else
+          tr_hist_tbl[evicted_addr].confidence = false;
+      }
+
       if(is_dirty && parent_cache) 
-        parent_cache->access(evicted_addr, true);
+        parent_cache->access(evicted_addr, pc, true);
     }
   }
 
@@ -114,4 +138,9 @@ int cacheSim::get_access_cnt()
 int cacheSim::get_miss_cnt()
 {
   return cache_miss;
+}
+
+int cacheSim::get_dead_cnt()
+{
+  return dead_blk_cnt;
 }

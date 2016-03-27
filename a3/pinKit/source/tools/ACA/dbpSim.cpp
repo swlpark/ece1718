@@ -49,6 +49,7 @@ END_LEGAL */
 #include <iostream>
 #include <fstream>
 #include <iomanip>
+#include <map>
 
 /* ===================================================================== */
 /* Global Variables */
@@ -97,13 +98,12 @@ static INT32 Usage()
 //L2 Data Cache Access - Read 
 static VOID RecordMemRead(VOID * ip, VOID * addr)
 {
-    L1_D_CACHE->access((size_t)addr, false);
+    L1_D_CACHE->access((size_t)addr, (size_t)ip, false);
 
     TraceFile << "@ " << dec << instCount << ", " << hex << ip << ": " << addr << " READ\n" ;
 }
 
 static VOID * WriteAddr;
-
 static VOID RecordWriteAddr(VOID * addr)
 {
     WriteAddr = addr;
@@ -112,7 +112,7 @@ static VOID RecordWriteAddr(VOID * addr)
 //L2 Data Cache Access - Write 
 static VOID RecordMemWrite(VOID * ip)
 {
-    L1_D_CACHE->access((size_t)ip , true);
+    L1_D_CACHE->access((size_t)WriteAddr, (size_t)ip, true);
 
     TraceFile << "@ " << dec << instCount << ", " << hex << ip << ": " << WriteAddr << " WRITE\n" ;
 }
@@ -120,7 +120,7 @@ static VOID RecordMemWrite(VOID * ip)
 //L1 Instruction Cache Access 
 VOID countFunc(VOID * ip)
 {
-  L1_I_CACHE->access((size_t)ip , false);
+  L1_I_CACHE->access((size_t)ip, (size_t)ip, false);
   instCount++;
 }
 
@@ -184,6 +184,9 @@ VOID Fini(INT32 code, VOID *v)
     TraceFile << "L1 I_CACHE MISS COUNT: " << L1_I_CACHE->get_miss_cnt() << std::endl;
     TraceFile << "L1 D_CACHE MISS COUNT: " << L1_D_CACHE->get_miss_cnt() << std::endl;
 
+    TraceFile << "L1 I_CACHE DEAD BLK COUNT: " << L1_I_CACHE->get_dead_cnt() << std::endl;
+    TraceFile << "L1 D_CACHE DEAD BLK COUNT: " << L1_D_CACHE->get_dead_cnt() << std::endl;
+
     TraceFile << "L2 ACCESS COUNT: " << L2_CACHE->get_access_cnt() << std::endl;
     TraceFile << "L2 CACHE MISS COUNT: " << L2_CACHE->get_miss_cnt() << std::endl;
 
@@ -210,7 +213,6 @@ int main(int argc, char *argv[])
     {
         return Usage();
     }
-    
     TraceFile.open(KnobOutputFile.Value().c_str());
     TraceFile.write(trace_header.c_str(),trace_header.size());
     TraceFile.setf(ios::showbase);
