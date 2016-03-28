@@ -38,7 +38,6 @@ END_LEGAL */
  *  This file contains an ISA-portable PIN tool for tracing memory accesses.
  */
 
-
 // MODIFIED: March 2016, for University of Toronto advanced computer 
 // architecture.
 // - markj sutherland
@@ -241,11 +240,11 @@ int main(int argc, char *argv[])
     std::cout << "==============================================" << std::endl;
     std::cout << "L1 Cache Size (KB): " << L1_cache_total_kb.Value() << std::endl;
     std::cout << "L1 Block Size (B): " << L1_cache_block_b.Value() << std::endl;
-    std::cout << "L1 Set Ways (B): " << L1_cache_assoc_w.Value() << std::endl;
+    std::cout << "L1 Set Ways : " << L1_cache_assoc_w.Value() << std::endl;
     
     std::cout << "L2 Cache Size (KB): " << L2_cache_total_kb.Value() << std::endl;
     std::cout << "L2 Block Size (B): " << L2_cache_block_b.Value() << std::endl;
-    std::cout << "L2 Set Ways (B): " << L2_cache_assoc_w.Value() << std::endl;
+    std::cout << "L2 Set Ways : " << L2_cache_assoc_w.Value() << std::endl;
     std::cout << "==============================================\n" << std::endl;
 
     L2_CACHE = new cacheSim(L2_cache_total_kb.Value(), L2_cache_block_b.Value(), L2_cache_assoc_w.Value(), 0); 

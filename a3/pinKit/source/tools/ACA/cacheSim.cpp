@@ -34,6 +34,7 @@ cacheSim::cacheSim(int t_sz_kb, int b_sz_b, int ways, cacheSim* parent)
   miss_hist.resize(num_sets, TagSR());
 }
 
+//Simulates a single cache access   
 void cacheSim::access(size_t addr, size_t pc, bool wr_access)
 {
   if (wr_access)
@@ -58,6 +59,7 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
     assert(false);
   } 
 
+  //Select a cache set
   std::list<Entry> & set = sets.at(set_idx);
   assert(set.size() <= (unsigned) set_ways); 
 
@@ -73,24 +75,25 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
 
        size_t blk_addr = (tag_bits << (blk_offs + set_bits)) | (set_idx << blk_offs);
 
-       //LRU position update for the hit block
-       //DBP missprediction: the blk is predicted dead, but referenced again!
+       //see if DBP miss-predicted a blk: the blk is predicted dead, but referenced again!
        if(it->pred_dead) {
          tr_hist_tbl[blk_addr].confidence = false;
          it->pred_dead = false;
          dbp_miss_pred += 1; 
-       }
+       } else {
 
-       //NOT AT MRU position; check for dead block prediction
-       if (tag_bits != set.back().tag || !UseCacheBurst) {
-         if (tr_hist_tbl.find(blk_addr)!= tr_hist_tbl.end()) {
-            if(tr_hist_tbl[blk_addr].trace == it->path_hist && tr_hist_tbl[blk_addr].confidence) {
-              it->pred_dead = true;
-              dbp_cnt++;
-            }
+         //predict dead block 
+         if (tag_bits != set.back().tag || !UseCacheBurst) {
+           if (tr_hist_tbl.find(blk_addr)!= tr_hist_tbl.end()) {
+              if(tr_hist_tbl[blk_addr].trace == it->path_hist && tr_hist_tbl[blk_addr].confidence) {
+                it->pred_dead = true;
+                dbp_cnt++;
+              }
+           }
          }
        }
 
+       //LRU position update for the hit block
        hit_blk = *it; 
        set.erase(it);
        set.push_back(hit_blk);
@@ -135,29 +138,7 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
     tag_sr.valid_1 = true;
     miss_hist[set_idx] = tag_sr;
    
-    //3) Prefetch Operation
-    if (tag_sr.valid_0 && tag_sr.valid_1 && TcpEnabled ) {
-      size_t tcp_idx = (tag_sr.tag_0 << (64 - blk_offs - set_bits)) | tag_sr.tag_1;
-
-      if (tcp_pred_tbl.find(tcp_idx) != tcp_pred_tbl.end() ) {
-        std::list<PredEntry> & pred_lst = tcp_pred_tbl.at(tcp_idx);
-        unsigned max_cnt = 0;
-        size_t prefetch_addr = 0;
-        for(std::list<PredEntry>::iterator it = pred_lst.begin(); it != pred_lst.end(); it++)
-        {
-           if(it->counter > max_cnt) {
-              max_cnt = it->counter;
-              prefetch_addr = (it->tgt_tag << (blk_offs + set_bits)) | (set_idx << blk_offs);
-           }
-        }
-        assert(prefetch_addr > 0);
-      }
-    }
-
-    //i.e. query L2 cache for the missing block
-    if(parent_cache) 
-      parent_cache->access(addr, pc, wr_access);
-
+    //3) Fetch a missed block
     Entry n_blk; 
     n_blk.tag = tag_bits;
     n_blk.dirty = wr_access;
@@ -197,9 +178,60 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
       if(is_dirty && parent_cache) 
         parent_cache->access(evicted_addr, pc, true);
     }
+    if(parent_cache) 
+      parent_cache->access(addr, pc, wr_access);
+
+    //4) Prefetch Operation
+    if (tag_sr.valid_0 && tag_sr.valid_1 && TcpEnabled ) {
+      size_t tcp_idx = (tag_sr.tag_0 << (64 - blk_offs - set_bits)) | tag_sr.tag_1;
+
+      if (tcp_pred_tbl.find(tcp_idx) != tcp_pred_tbl.end() ) {
+        std::list<PredEntry> & pred_lst = tcp_pred_tbl.at(tcp_idx);
+        unsigned max_cnt = 0;
+        size_t prefetch_tag = 0;
+        for(std::list<PredEntry>::iterator it = pred_lst.begin(); it != pred_lst.end(); it++)
+        {
+           if(it->counter > max_cnt) {
+              max_cnt = it->counter;
+              prefetch_tag = it->tgt_tag;
+           }
+        }
+        assert(max_cnt > 0);
+
+        //insert into dead-block position; if not LRU
+        bool use_LRU = true;
+        for(std::list<Entry>::iterator it = set.begin(); it != set.end(); it++)
+        {
+          if (it->pred_dead) {
+           it->dirty = false;
+           it->pred_dead = false;
+           it->tag = prefetch_tag;
+           it->path_hist = 0;
+           use_LRU = false; 
+           break;
+          }
+        }
+        //insert at LRU position if no dead-block exists in the set
+        if(use_LRU)
+        {
+          Entry p_blk; 
+          p_blk.tag = prefetch_tag;
+          p_blk.dirty = false;
+          p_blk.pred_dead = false;
+          p_blk.path_hist = 0;
+          if((int)set.size() < set_ways) {
+            set.push_front(p_blk);
+          } else {
+            set.pop_front();
+            set.push_front(p_blk);
+          }
+        }
+      }
+    }
+
   }
-  //std::cerr << "ADDR: " << std::hex << addr << "; SET_IDX: " << std::dec << set_idx << std::endl;
 }
+//return counters
 
 int cacheSim::get_access_cnt()
 {

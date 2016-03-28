@@ -11,19 +11,19 @@
 
 struct Entry
 {
-  bool dirty;
-  bool pred_dead;
-  size_t tag;
-  size_t path_hist;
+  bool dirty;       //is accessed?
+  bool pred_dead;   //predicted dead by DBP
+  size_t tag;       //block TAG
+  size_t path_hist; //BurstTrace
 };
 
+//stores tags of the last two misses
 struct TagSR
 {
   size_t tag_0;
   size_t tag_1;
   bool valid_0;
   bool valid_1;
-
   TagSR(): tag_0(0), tag_1(0), valid_0(false), valid_1(false) {}
 };
 
@@ -39,16 +39,17 @@ class cacheSim
   int set_bits;
   int blk_offs;
 
-  int rd_cnt;
-  int wr_cnt;
-  int cache_miss;
-  int dbp_cnt; //num dead-blk predictions
-  int dbp_miss_pred;
-  int evicted_cnt;
+  int rd_cnt;        //number of cache reads
+  int wr_cnt;        //number of cache writes
+  int cache_miss;    //number of cache misses
+  int dbp_cnt;       //num dead-blk predictions
+  int dbp_miss_pred; //miss-predicted dead-blks (used for DBP accuracy)
+  int evicted_cnt;   //number of evicted blk    (used for DBP coverage)
 
   cacheSim * parent_cache;
-  std::vector< std::list<Entry> > sets;
-  std::vector< TagSR > miss_hist;
+
+  std::vector< std::list<Entry> > sets; //cache sets
+  std::vector< TagSR > miss_hist;       //keeps track of cache misses in each set 
 
 public :
   cacheSim(int, int, int, cacheSim*);
@@ -59,7 +60,6 @@ public :
   int get_evicted_cnt();
   int get_dbp_cnt();
   int get_dbp_miss_pred();
-
 };
 
 #endif
