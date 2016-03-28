@@ -55,9 +55,9 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
     std::cout << std::hex << "TAG_BITS = " << tag_bits << std::endl;
     std::cout << std::dec << "SET_IDX = " << set_idx << std::endl;
     std::cout << std::dec << "NUM SETS = " << sets.size() << std::endl;
-
     assert(false);
   } 
+
   std::list<Entry> & set = sets.at(set_idx);
   assert(set.size() <= (unsigned) set_ways); 
 

@@ -16,6 +16,13 @@ struct Entry
   size_t path_hist;
 };
 
+struct TagSR
+{
+  size_t tag_0;
+  size_t tag_1;
+};
+
+
 class cacheSim 
 {
   //cache size params
@@ -34,6 +41,7 @@ class cacheSim
 
   cacheSim * parent_cache;
   std::vector< std::list<Entry> > sets;
+  std::vector< TagSR > miss_hist;
 
 public :
   cacheSim(int, int, int, cacheSim*);
