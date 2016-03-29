@@ -206,6 +206,13 @@ VOID Fini(INT32 code, VOID *v)
     TraceFile << "L1 I_CACHE COVERAGE : " << l1i_cov << std::endl;
     TraceFile << "L1 D_CACHE COVERAGE : " << l1d_cov << std::endl;
 
+
+    TraceFile << "L1 I_CACHE TCP Prefetches: " << L1_I_CACHE->get_tcp_pr_cnt() << std::endl;
+    TraceFile << "L1 D_CACHE TCP Prefetches: " << L1_D_CACHE->get_tcp_pr_cnt() << std::endl;
+
+    TraceFile << "L1 I_CACHE Useless Prefetches: " << L1_I_CACHE->get_useless_pr_cnt() << std::endl;
+    TraceFile << "L1 D_CACHE Useless Prefetches: " << L1_D_CACHE->get_useless_pr_cnt() << std::endl;
+
     TraceFile << "L2 ACCESS COUNT: " << L2_CACHE->get_access_cnt() << std::endl;
     TraceFile << "L2 CACHE MISS COUNT: " << L2_CACHE->get_miss_cnt() << std::endl;
 

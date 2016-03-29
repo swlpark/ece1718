@@ -13,6 +13,8 @@ struct Entry
 {
   bool dirty;       //is accessed?
   bool pred_dead;   //predicted dead by DBP
+  bool prefetched;  //prefetched blk by TCP
+  bool referenced;  //is this block ever referenced?
   size_t tag;       //block TAG
   size_t path_hist; //BurstTrace
 };
@@ -46,6 +48,9 @@ class cacheSim
   int dbp_miss_pred; //miss-predicted dead-blks (used for DBP accuracy)
   int evicted_cnt;   //number of evicted blk    (used for DBP coverage)
 
+  int tcp_pr_cnt;     //number of blocks prefetched by TCP
+  int useless_pr_cnt; //prefetches that are not referenced
+
   cacheSim * parent_cache;
 
   std::vector< std::list<Entry> > sets; //cache sets
@@ -60,6 +65,9 @@ public :
   int get_evicted_cnt();
   int get_dbp_cnt();
   int get_dbp_miss_pred();
+
+  int get_tcp_pr_cnt();
+  int get_useless_pr_cnt();
 };
 
 #endif

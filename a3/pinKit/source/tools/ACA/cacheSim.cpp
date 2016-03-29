@@ -18,7 +18,8 @@ static inline int LOGB2C(int num)
 }
 
 cacheSim::cacheSim(int t_sz_kb, int b_sz_b, int ways, cacheSim* parent)
- : rd_cnt(0), wr_cnt(0), cache_miss(0), dbp_cnt(0), dbp_miss_pred(0), evicted_cnt(0), parent_cache(parent)
+ : rd_cnt(0), wr_cnt(0), cache_miss(0), dbp_cnt(0), dbp_miss_pred(0), evicted_cnt(0), tcp_pr_cnt(0),  
+   useless_pr_cnt(0) ,parent_cache(parent)
 {
   assert(IS_POW_2(b_sz_b));
   total_size_kb = t_sz_kb;
@@ -68,6 +69,7 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
   {
      if (it->tag == tag_bits) {
        cache_hit = true;
+       it->referenced = true;
        it->dirty = wr_access;
        //it->path_hist ^= pc;
        //it->path_hist &= ((1 << blk_offs) - 1);
@@ -121,13 +123,20 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
       } else
       {
         std::list<PredEntry> & pred_lst = tcp_pred_tbl.at(tcp_idx);
+        bool push_new = true;
         for(std::list<PredEntry>::iterator it = pred_lst.begin(); it != pred_lst.end(); it++)
         {
            if(it->tgt_tag == tag_bits) {
              it->counter += 1;
+             push_new = false;
              break;
            }
         }
+        //assert(pred_lst.size() == 1);
+        PredEntry tcp_entry;
+        tcp_entry.tgt_tag = tag_bits;
+        tcp_entry.counter = 1;
+        if(push_new) pred_lst.push_back(tcp_entry); 
       }
     }
 
@@ -143,9 +152,10 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
     n_blk.tag = tag_bits;
     n_blk.dirty = wr_access;
     n_blk.pred_dead = false;
+    n_blk.prefetched = false;
+    n_blk.referenced = false;
     //n_blk.path_hist = pc & ((1 << blk_offs) - 1);
-
-    //using counter instead
+    //i.e. using ref counter as path history...
     n_blk.path_hist = 0;
 
     if((int)set.size() < set_ways) {
@@ -158,6 +168,10 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
       size_t evicted_trace = set.front().path_hist;
 
       evicted_cnt++;
+      //if evicted block is prefetched && never referenced
+      if(set.front().referenced == false && set.front().prefetched)
+        useless_pr_cnt++; 
+
       set.pop_front();
       set.push_back(n_blk);
 
@@ -184,8 +198,10 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
     //4) Prefetch Operation
     if (tag_sr.valid_0 && tag_sr.valid_1 && TcpEnabled ) {
       size_t tcp_idx = (tag_sr.tag_0 << (64 - blk_offs - set_bits)) | tag_sr.tag_1;
+      //size_t tcp_idx = tag_sr.tag_0 ^ tag_sr.tag_1;
 
       if (tcp_pred_tbl.find(tcp_idx) != tcp_pred_tbl.end() ) {
+
         std::list<PredEntry> & pred_lst = tcp_pred_tbl.at(tcp_idx);
         unsigned max_cnt = 0;
         size_t prefetch_tag = 0;
@@ -199,40 +215,45 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
         assert(max_cnt > 0);
 
         //insert into dead-block position; if not LRU
-        bool use_LRU = true;
+        //bool use_LRU = true;
         for(std::list<Entry>::iterator it = set.begin(); it != set.end(); it++)
         {
           if (it->pred_dead) {
            it->dirty = false;
            it->pred_dead = false;
+           it->prefetched = true;
+           it->referenced = false;
            it->tag = prefetch_tag;
            it->path_hist = 0;
-           use_LRU = false; 
+           //use_LRU = false; 
+           tcp_pr_cnt++;
            break;
           }
         }
         //insert at LRU position if no dead-block exists in the set
-        if(use_LRU)
-        {
-          Entry p_blk; 
-          p_blk.tag = prefetch_tag;
-          p_blk.dirty = false;
-          p_blk.pred_dead = false;
-          p_blk.path_hist = 0;
-          if((int)set.size() < set_ways) {
-            set.push_front(p_blk);
-          } else {
-            set.pop_front();
-            set.push_front(p_blk);
-          }
-        }
+        //if(use_LRU)
+        //{
+          //Entry p_blk; 
+          //p_blk.tag = prefetch_tag;
+          //p_blk.dirty = false;
+          //p_blk.pred_dead = false;
+          //p_blk.prefetched = true;
+          //p_blk.referenced = false;
+          //p_blk.path_hist = 0;
+          //if((int)set.size() < set_ways) {
+          //  set.push_front(p_blk);
+          //} else {
+          //  set.pop_front();
+          //  set.push_front(p_blk);
+          //}
+        //}
       }
     }
 
   }
 }
-//return counters
 
+//return counters
 int cacheSim::get_access_cnt()
 {
   return (wr_cnt + rd_cnt);
@@ -258,4 +279,13 @@ int cacheSim::get_dbp_miss_pred()
   return dbp_miss_pred;
 }
 
+int cacheSim::get_tcp_pr_cnt()
+{
+  return tcp_pr_cnt;
+}
+
+int cacheSim::get_useless_pr_cnt()
+{
+  return useless_pr_cnt;
+}
 
