@@ -16,7 +16,7 @@ struct Entry
   bool prefetched;  //prefetched blk by TCP
   bool referenced;  //is this block ever referenced?
   size_t tag;       //block TAG
-  size_t path_hist; //BurstTrace
+  unsigned refCount;//reference count
 };
 
 //stores tags of the last two misses
@@ -41,15 +41,15 @@ class cacheSim
   int set_bits;
   int blk_offs;
 
-  int rd_cnt;        //number of cache reads
-  int wr_cnt;        //number of cache writes
-  int cache_miss;    //number of cache misses
-  int dbp_cnt;       //num dead-blk predictions
-  int dbp_miss_pred; //miss-predicted dead-blks (used for DBP accuracy)
-  int evicted_cnt;   //number of evicted blk    (used for DBP coverage)
+  long rd_cnt;        //number of cache reads
+  long wr_cnt;        //number of cache writes
+  long cache_miss;    //number of cache misses
+  long dbp_cnt;       //num dead-blk predictions
+  long dbp_miss_pred; //miss-predicted dead-blks (used for DBP accuracy)
+  long evicted_cnt;   //number of evicted blk    (used for DBP coverage)
 
-  int tcp_pr_cnt;     //number of blocks prefetched by TCP
-  int useless_pr_cnt; //prefetches that are not referenced
+  long tcp_pr_cnt;     //number of blocks prefetched by TCP
+  long useless_pr_cnt; //prefetches that are not referenced
 
   cacheSim * parent_cache;
 
@@ -57,17 +57,20 @@ class cacheSim
   std::vector< TagSR > miss_hist;       //keeps track of cache misses in each set 
 
 public :
+  bool RefCount;
+
   cacheSim(int, int, int, cacheSim*);
 
   void access(size_t, size_t, bool);
-  int get_access_cnt();
-  int get_miss_cnt();
-  int get_evicted_cnt();
-  int get_dbp_cnt();
-  int get_dbp_miss_pred();
+  long get_access_cnt();
+  long get_miss_cnt();
+  long get_evicted_cnt();
+  long get_dbp_cnt();
+  long get_dbp_miss_pred();
 
-  int get_tcp_pr_cnt();
-  int get_useless_pr_cnt();
+  long get_tcp_pr_cnt();
+  long get_useless_pr_cnt();
+  void print_cache_stats();
 };
 
 #endif

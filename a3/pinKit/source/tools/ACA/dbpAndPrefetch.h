@@ -3,12 +3,22 @@
 
 #include <map>
 #include <list>
+#include <cassert>
 
 //TraceEntry: used for dead-block prediction for L1 cache
 struct TraceEntry
 {
   bool confidence;  
-  size_t trace;
+  size_t current_trace;
+  size_t old_trace;
+};
+
+//RefEntry: used for dead-block prediction for L2 cache
+struct RefEntry
+{
+  int sat_cnt;  //saturating count (0-3)
+  int dead_cnt; //threshold count
+  int filter_cnt; //hold smaller cnt
 };
 
 //TCP prediction entry
@@ -27,5 +37,11 @@ extern std::map <size_t, std::list<PredEntry> > tcp_pred_tbl;
 
 extern bool TcpEnabled;
 extern bool UseCacheBurst;
+
+//update trace and return true if the block is predicted to be dead
+void update_trace (size_t blk_addr, size_t pc);
+bool predict_db (size_t blk_addr);
+void update_on_miss(size_t blk_addr, size_t pc);
+void update_on_eviction(size_t blk_add);
 
 #endif

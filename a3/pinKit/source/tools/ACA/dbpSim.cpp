@@ -41,10 +41,11 @@ END_LEGAL */
 // MODIFIED: March 2016, for University of Toronto advanced computer 
 // architecture.
 // - markj sutherland
-
 #include "pin.H"
 #include "cacheSim.h"
 #include "gzstream.hpp"
+#include "dbpAndPrefetch.h"
+
 #include <iostream>
 #include <fstream>
 #include <iomanip>
@@ -76,6 +77,8 @@ KNOB<int> L2_cache_total_kb(KNOB_MODE_WRITEONCE, "pintool", "l2s", "1024", "set 
 KNOB<int> L2_cache_block_b(KNOB_MODE_WRITEONCE, "pintool", "l2b", "64", "set L2 cache block size in Bytes");
 KNOB<int> L2_cache_assoc_w(KNOB_MODE_WRITEONCE, "pintool", "l2w", "16", "set L2 cache ways");
 
+KNOB<int> tcp_enable(KNOB_MODE_WRITEONCE, "pintool", "p", "false", "TCP Prefetcher Enable = 1 Disable= 0");
+
 /* ===================================================================== */
 /* Print Help Message                                                    */
 /* ===================================================================== */
@@ -97,7 +100,7 @@ static INT32 Usage()
 //L2 Data Cache Access - Read 
 static VOID RecordMemRead(VOID * ip, VOID * addr)
 {
-    L1_D_CACHE->access((size_t)addr, (size_t)ip, false);
+    L1_D_CACHE->access((long long)addr, (long long)ip, false);
 #ifdef _DEBUG_
     TraceFile << "@ " << dec << instCount << ", " << hex << ip << ": " << addr << " READ\n" ;
 #endif
@@ -112,7 +115,7 @@ static VOID RecordWriteAddr(VOID * addr)
 //L2 Data Cache Access - Write 
 static VOID RecordMemWrite(VOID * ip)
 {
-    L1_D_CACHE->access((size_t)WriteAddr, (size_t)ip, true);
+    L1_D_CACHE->access((long long)WriteAddr, (long long)ip, true);
 #ifdef _DEBUG_
     TraceFile << "@ " << dec << instCount << ", " << hex << ip << ": " << WriteAddr << " WRITE\n" ;
 #endif
@@ -121,7 +124,7 @@ static VOID RecordMemWrite(VOID * ip)
 //L1 Instruction Cache Access 
 VOID countFunc(VOID * ip)
 {
-  L1_I_CACHE->access((size_t)ip, (size_t)ip, false);
+  L1_I_CACHE->access((long long)ip, (long long)ip, false);
   instCount++;
 }
 
@@ -197,25 +200,20 @@ VOID Fini(INT32 code, VOID *v)
     double l1i_accuracy = (double)(L1_I_CACHE->get_dbp_cnt() - L1_I_CACHE->get_dbp_miss_pred()) / (double) (L1_I_CACHE->get_dbp_cnt());
     double l1d_accuracy = (double)(L1_D_CACHE->get_dbp_cnt() - L1_D_CACHE->get_dbp_miss_pred()) / (double) (L1_D_CACHE->get_dbp_cnt());
 
-    TraceFile << "L1 I_CACHE ACCURACY : " << l1i_accuracy << std::endl;
-    TraceFile << "L1 D_CACHE ACCURACY : " << l1d_accuracy << std::endl;
+    TraceFile << "L1 I_CACHE DBP ACCURACY : " << l1i_accuracy << std::endl;
+    TraceFile << "L1 D_CACHE DBP ACCURACY : " << l1d_accuracy << std::endl;
 
     double l1i_cov = (double)(L1_I_CACHE->get_dbp_cnt() - L1_I_CACHE->get_dbp_miss_pred()) / (double) (L1_I_CACHE->get_evicted_cnt());
     double l1d_cov = (double)(L1_D_CACHE->get_dbp_cnt() - L1_D_CACHE->get_dbp_miss_pred()) / (double) (L1_D_CACHE->get_evicted_cnt());
 
-    TraceFile << "L1 I_CACHE COVERAGE : " << l1i_cov << std::endl;
-    TraceFile << "L1 D_CACHE COVERAGE : " << l1d_cov << std::endl;
-
-
+    TraceFile << "L1 I_CACHE DBP COVERAGE : " << l1i_cov << std::endl;
+    TraceFile << "L1 D_CACHE DBP COVERAGE : " << l1d_cov << std::endl;
     TraceFile << "L1 I_CACHE TCP Prefetches: " << L1_I_CACHE->get_tcp_pr_cnt() << std::endl;
     TraceFile << "L1 D_CACHE TCP Prefetches: " << L1_D_CACHE->get_tcp_pr_cnt() << std::endl;
-
-    TraceFile << "L1 I_CACHE Useless Prefetches: " << L1_I_CACHE->get_useless_pr_cnt() << std::endl;
-    TraceFile << "L1 D_CACHE Useless Prefetches: " << L1_D_CACHE->get_useless_pr_cnt() << std::endl;
-
+    TraceFile << "L1 I_CACHE TCP Useless Prefetches: " << L1_I_CACHE->get_useless_pr_cnt() << std::endl;
+    TraceFile << "L1 D_CACHE TCP Useless Prefetches: " << L1_D_CACHE->get_useless_pr_cnt() << std::endl;
     TraceFile << "L2 ACCESS COUNT: " << L2_CACHE->get_access_cnt() << std::endl;
     TraceFile << "L2 CACHE MISS COUNT: " << L2_CACHE->get_miss_cnt() << std::endl;
-
     TraceFile << "==============================================" << std::endl;
 
     delete L2_CACHE;
@@ -252,8 +250,11 @@ int main(int argc, char *argv[])
     std::cout << "L2 Cache Size (KB): " << L2_cache_total_kb.Value() << std::endl;
     std::cout << "L2 Block Size (B): " << L2_cache_block_b.Value() << std::endl;
     std::cout << "L2 Set Ways : " << L2_cache_assoc_w.Value() << std::endl;
+    std::cout << "sizeof(size_t) " << sizeof(size_t) << std::endl;
+    std::cout << "sizeof(void *) " << sizeof(void*) << std::endl;
     std::cout << "==============================================\n" << std::endl;
 
+    TcpEnabled = (tcp_enable.Value() == 0) ? false : true;
     L2_CACHE = new cacheSim(L2_cache_total_kb.Value(), L2_cache_block_b.Value(), L2_cache_assoc_w.Value(), 0); 
     L1_I_CACHE = new cacheSim(L1_cache_total_kb.Value(), L1_cache_block_b.Value(), L1_cache_assoc_w.Value(), L2_CACHE); 
     L1_D_CACHE = new cacheSim(L1_cache_total_kb.Value(), L1_cache_block_b.Value(), L1_cache_assoc_w.Value(), L2_CACHE); 
@@ -269,7 +270,6 @@ int main(int argc, char *argv[])
     
     return 0;
 }
-
 /* ===================================================================== */
 /* eof */
 /* ===================================================================== */
