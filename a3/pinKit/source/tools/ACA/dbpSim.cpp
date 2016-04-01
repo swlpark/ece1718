@@ -250,8 +250,6 @@ int main(int argc, char *argv[])
     std::cout << "L2 Cache Size (KB): " << L2_cache_total_kb.Value() << std::endl;
     std::cout << "L2 Block Size (B): " << L2_cache_block_b.Value() << std::endl;
     std::cout << "L2 Set Ways : " << L2_cache_assoc_w.Value() << std::endl;
-    std::cout << "sizeof(size_t) " << sizeof(size_t) << std::endl;
-    std::cout << "sizeof(void *) " << sizeof(void*) << std::endl;
     std::cout << "==============================================\n" << std::endl;
 
     TcpEnabled = (tcp_enable.Value() == 0) ? false : true;

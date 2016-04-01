@@ -9,12 +9,25 @@ bool UseCacheBurst = false;
 
 void update_trace(size_t blk_addr, size_t pc)
 {
-  assert(tr_hist_tbl.find(blk_addr) != tr_hist_tbl.end());
-  tr_hist_tbl[blk_addr].current_trace += (pc & 1) | 1;
-  tr_hist_tbl[blk_addr].current_trace &= ((1 << 30) - 1);
+    assert(tr_hist_tbl.find(blk_addr) != tr_hist_tbl.end());
+    //tr_hist_tbl[blk_addr].current_trace += (pc & 1) | 1;
+    tr_hist_tbl[blk_addr].current_trace += pc;
+    tr_hist_tbl[blk_addr].current_trace &= ((1 << 30) - 1);
 }
 
 bool predict_db(size_t blk_addr)
+{
+  if (tr_hist_tbl.find(blk_addr) != tr_hist_tbl.end())
+  {
+    if((tr_hist_tbl[blk_addr].current_trace == tr_hist_tbl[blk_addr].old_trace) && tr_hist_tbl[blk_addr].confidence)
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool predict_db_ref_cnt(size_t blk_addr)
 {
   if (tr_hist_tbl.find(blk_addr) != tr_hist_tbl.end())
   {

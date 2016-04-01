@@ -41,15 +41,15 @@ class cacheSim
   int set_bits;
   int blk_offs;
 
-  long rd_cnt;        //number of cache reads
-  long wr_cnt;        //number of cache writes
-  long cache_miss;    //number of cache misses
-  long dbp_cnt;       //num dead-blk predictions
-  long dbp_miss_pred; //miss-predicted dead-blks (used for DBP accuracy)
-  long evicted_cnt;   //number of evicted blk    (used for DBP coverage)
+  long rd_cnt;        // number of cache reads
+  long wr_cnt;        // number of cache writes
+  long cache_miss;    // number of cache misses
+  long dbp_cnt;       // num dead-blk predictions
+  long dbp_miss_pred; // miss-predicted dead-blks (used for DBP accuracy)
+  long evicted_cnt;   // number of evicted blk    (used for DBP coverage)
 
-  long tcp_pr_cnt;     //number of blocks prefetched by TCP
-  long useless_pr_cnt; //prefetches that are not referenced
+  long tcp_pr_cnt;     // number of blocks prefetched by TCP
+  long useless_pr_cnt; // prefetches that are not referenced
 
   cacheSim * parent_cache;
 
@@ -57,7 +57,9 @@ class cacheSim
   std::vector< TagSR > miss_hist;       //keeps track of cache misses in each set 
 
 public :
-  bool RefCount;
+  //L1: false (uses burstTrace)
+  //L2: true  (uses refCount+)
+  bool dbp_use_refcount;
 
   cacheSim(int, int, int, cacheSim*);
 
@@ -70,7 +72,6 @@ public :
 
   long get_tcp_pr_cnt();
   long get_useless_pr_cnt();
-  void print_cache_stats();
 };
 
 #endif

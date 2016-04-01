@@ -50,6 +50,7 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
   size_t set_idx = (addr >> blk_offs) & ((1 << set_bits) - 1);
   size_t tag_bits = addr >> (blk_offs + set_bits);
 
+  //sanity check: BLOCK Address Reconstruction
   //size_t blk_addr = (tag_bits << (blk_offs + set_bits)) | (set_idx << blk_offs);
   //assert(blk_addr == (addr & ~((1 << blk_offs) - 1)));
 
@@ -63,20 +64,21 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
     std::cout << std::dec << "NUM SETS = " << sets.size() << std::endl;
     assert(false);
   } 
+
   //select a cache set
   std::list<Entry> & set = sets.at(set_idx);
   assert(set.size() <= (unsigned) set_ways); 
 
   //tag and trace of MRU cache block before the cache set is updated
-  //size_t mru_tag, mru_trace;
-  //if (set.size() > 0) {
-  //  mru_tag = set.back().tag;
-  //  mru_trace = set.back().burstTrace;
-  //}
+  size_t mru_tag;
+  if (set.size() > 0) {
+    mru_tag = set.back().tag;
+  }
   Entry hit_blk;
   for(std::list<Entry>::iterator it = set.begin(); it != set.end(); it++)
   {
-     if (it->tag == tag_bits) {
+     if (it->tag == tag_bits)
+     {
        cache_hit = true;
        it->referenced = true;
        it->dirty = wr_access;
@@ -95,15 +97,14 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
          it->pred_dead = false;
          dbp_miss_pred += 1; 
        }
-       else
-       {
-            if(predict_db(blk_addr))
-            {
-              it->pred_dead = true;
-              dbp_cnt++;
-            }
-       }
-
+       //else
+       //{
+       //     if(predict_db(blk_addr))
+       //     {
+       //       it->pred_dead = true;
+       //       dbp_cnt++;
+       //     }
+       //}
        //LRU position update for the hit block
        hit_blk = *it; 
        set.erase(it);
@@ -112,24 +113,26 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
      }
   } 
   //predict dead block at the end of cache burst
-  //if(cache_hit && mru_tag != set.back().tag)
-  //{
-  //  size_t blk_addr = (mru_tag << (blk_offs + set_bits)) | (set_idx << blk_offs);
-  //  if (tr_hist_tbl.find(blk_addr)!= tr_hist_tbl.end()) {
-  //     if(tr_hist_tbl[blk_addr].trace == mru_trace && tr_hist_tbl[blk_addr].confidence) {
-  //       //second-last element == last MRU block
-  //       auto it = ++(set.rbegin());
-  //       assert(it->tag == mru_tag);
-  //       it->pred_dead = true;
-  //       dbp_cnt++;
-  //     }
-  //  }
-  //}
+  if(cache_hit && mru_tag != set.back().tag)
+  {
+    size_t blk_addr = (mru_tag << (blk_offs + set_bits)) | (set_idx << blk_offs);
+    if(predict_db(blk_addr))
+    {
+      //second-last element == last MRU block
+      auto it = ++(set.rbegin());
+      assert(it->tag == mru_tag);
+      it->pred_dead = true;
+      dbp_cnt++;
+    }
+  }
 
   //access next level cache hiearchy
   if(!cache_hit)
   {
     cache_miss++;
+    //start TRACE for missed block
+    size_t m_blk_addr = (tag_bits << (blk_offs + set_bits)) | (set_idx << blk_offs);
+    update_on_miss(m_blk_addr, pc);
 
     //1) update TCP correlation table
     TagSR tag_sr = miss_hist.at(set_idx); 
@@ -160,7 +163,7 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
         PredEntry tcp_entry;
         tcp_entry.tgt_tag = tag_bits;
         tcp_entry.counter = 1;
-        if(push_new) pred_lst.push_back(tcp_entry); 
+        if (push_new) pred_lst.push_back(tcp_entry); 
       }
     }
 
@@ -181,10 +184,6 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
     //n_blk.burstTrace = pc & ((1 << 30) - 1);
     n_blk.refCount = 0;
 
-    //start TRACE for missed block
-    size_t m_blk_addr = (tag_bits << (blk_offs + set_bits)) | (set_idx << blk_offs);
-    update_on_miss(m_blk_addr, pc);
-
     if((int)set.size() < set_ways)
     {
       set.push_back(n_blk);
@@ -200,6 +199,7 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
 
       //if evicted block is prefetched && never referenced
       if(set.front().referenced == false && set.front().prefetched)
+         useless_pr_cnt++;
 
       set.pop_front();
       set.push_back(n_blk);
@@ -306,4 +306,3 @@ long cacheSim::get_useless_pr_cnt()
 {
   return useless_pr_cnt;
 }
-
