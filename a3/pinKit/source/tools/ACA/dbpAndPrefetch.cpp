@@ -9,6 +9,11 @@ bool UseCacheBurst = false;
 
 void update_trace(size_t blk_addr, size_t pc)
 {
+    if(tr_hist_tbl.find(blk_addr) == tr_hist_tbl.end()) 
+    {
+      std::cout << "BLK_ADDR:" << blk_addr << std::endl;
+      std::cout << "PC:" << pc << std::endl;
+    }
     assert(tr_hist_tbl.find(blk_addr) != tr_hist_tbl.end());
     //tr_hist_tbl[blk_addr].current_trace += (pc & 1) | 1;
     tr_hist_tbl[blk_addr].current_trace += pc;

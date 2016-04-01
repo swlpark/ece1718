@@ -246,6 +246,11 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
            it->refCount = 0;
            //use_LRU = false; 
            tcp_pr_cnt++;
+          
+ 
+           //DBP update
+           size_t blk_addr = (prefetch_tag << (blk_offs + set_bits)) | (set_idx << blk_offs);
+           update_on_miss(blk_addr, pc);
            break;
           }
         }

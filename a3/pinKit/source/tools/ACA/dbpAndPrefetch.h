@@ -4,6 +4,7 @@
 #include <map>
 #include <list>
 #include <cassert>
+#include <iostream>
 
 //TraceEntry: used for dead-block prediction for L1 cache
 struct TraceEntry
