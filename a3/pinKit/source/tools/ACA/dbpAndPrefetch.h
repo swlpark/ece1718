@@ -42,7 +42,9 @@ extern bool UseCacheBurst;
 //update trace and return true if the block is predicted to be dead
 void update_trace (size_t blk_addr, size_t pc);
 bool predict_db (size_t blk_addr);
-void update_on_miss(size_t blk_addr, size_t pc);
+void update_on_miss(size_t blk_addr);
 void update_on_eviction(size_t blk_add);
+
+void update_on_miss_ref_cnt(size_t blk_addr, int ref_cnt);
 
 #endif

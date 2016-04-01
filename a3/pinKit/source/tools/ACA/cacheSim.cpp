@@ -19,7 +19,7 @@ static inline int LOGB2C(int num)
 
 cacheSim::cacheSim(int t_sz_kb, int b_sz_b, int ways, cacheSim* parent)
  : rd_cnt(0), wr_cnt(0), cache_miss(0), dbp_cnt(0), dbp_miss_pred(0), evicted_cnt(0), tcp_pr_cnt(0),  
-   useless_pr_cnt(0) ,parent_cache(parent)
+   useless_pr_cnt(0), parent_cache(parent), dbp_use_refcount(false)
 {
   assert(IS_POW_2(b_sz_b));
   total_size_kb = t_sz_kb;
@@ -33,6 +33,7 @@ cacheSim::cacheSim(int t_sz_kb, int b_sz_b, int ways, cacheSim* parent)
   set_bits = LOGB2C(num_sets);
   sets.resize(num_sets, std::list<Entry>());
   miss_hist.resize(num_sets, TagSR());
+
 }
 
 //Simulates a single cache access   
@@ -132,7 +133,7 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
     cache_miss++;
     //start TRACE for missed block
     size_t m_blk_addr = (tag_bits << (blk_offs + set_bits)) | (set_idx << blk_offs);
-    update_on_miss(m_blk_addr, pc);
+    update_on_miss(m_blk_addr);
 
     //1) update TCP correlation table
     TagSR tag_sr = miss_hist.at(set_idx); 
@@ -211,7 +212,7 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
         parent_cache->access(evicted_addr, pc, true);
     }
 
-    if(parent_cache) 
+    if (parent_cache) 
       parent_cache->access(addr, pc, wr_access);
 
     //4) Prefetch Operation
@@ -237,7 +238,8 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
         //bool use_LRU = true;
         for(std::list<Entry>::iterator it = set.begin(); it != set.end(); it++)
         {
-          if (it->pred_dead) {
+          if (it->pred_dead)
+          {
            it->dirty = false;
            it->pred_dead = false;
            it->prefetched = true;
@@ -250,10 +252,11 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
  
            //DBP update
            size_t blk_addr = (prefetch_tag << (blk_offs + set_bits)) | (set_idx << blk_offs);
-           update_on_miss(blk_addr, pc);
+           update_on_miss(blk_addr);
            break;
           }
         }
+
         //insert at LRU position if no dead-block exists in the set
         //if(use_LRU)
         //{

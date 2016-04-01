@@ -15,7 +15,6 @@ void update_trace(size_t blk_addr, size_t pc)
       std::cout << "PC:" << pc << std::endl;
     }
     assert(tr_hist_tbl.find(blk_addr) != tr_hist_tbl.end());
-    //tr_hist_tbl[blk_addr].current_trace += (pc & 1) | 1;
     tr_hist_tbl[blk_addr].current_trace += pc;
     tr_hist_tbl[blk_addr].current_trace &= ((1 << 30) - 1);
 }
@@ -44,7 +43,7 @@ bool predict_db_ref_cnt(size_t blk_addr)
   return false;
 }
 
-void update_on_miss(size_t blk_addr, size_t pc)
+void update_on_miss(size_t blk_addr)
 {
     if (tr_hist_tbl.find(blk_addr) != tr_hist_tbl.end() )
     {
