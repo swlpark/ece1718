@@ -36,7 +36,7 @@ cacheSim::cacheSim(int t_sz_kb, int b_sz_b, int ways, cacheSim* parent)
 
 }
 
-//Simulates a single cache access   
+//simulates a single cache access   
 void cacheSim::access(size_t addr, size_t pc, bool wr_access)
 {
   if (wr_access)
@@ -86,7 +86,7 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
        size_t blk_addr = (tag_bits << (blk_offs + set_bits)) | (set_idx << blk_offs);
  
        //trace update
-       if (tag_bits != set.back().tag) 
+       if (!dbp_use_refcount && (tag_bits != set.back().tag)) 
        {
          update_trace(blk_addr, pc);
        }
@@ -106,6 +106,15 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
        //       dbp_cnt++;
        //     }
        //}
+       else if (dbp_use_refcount)
+       {
+         if(predict_db_cnt(blk_addr, it->refCount))
+         {
+           it->pred_dead = true;
+           dbp_cnt++;
+         }
+       }
+
        //LRU position update for the hit block
        hit_blk = *it; 
        set.erase(it);
@@ -113,11 +122,11 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
        break;
      }
   } 
-  //predict dead block at the end of cache burst
-  if(cache_hit && mru_tag != set.back().tag)
+  //BurstTrace: predict dead block at the end of cache burst
+  if(!dbp_use_refcount && cache_hit && mru_tag != set.back().tag)
   {
     size_t blk_addr = (mru_tag << (blk_offs + set_bits)) | (set_idx << blk_offs);
-    if(predict_db(blk_addr))
+    if(predict_db_trace(blk_addr))
     {
       //second-last element == last MRU block
       auto it = ++(set.rbegin());
@@ -133,45 +142,21 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
     cache_miss++;
     //start TRACE for missed block
     size_t m_blk_addr = (tag_bits << (blk_offs + set_bits)) | (set_idx << blk_offs);
-    update_on_miss(m_blk_addr);
+
+    if (dbp_use_refcount)
+      update_on_miss_cnt(m_blk_addr);
+    else
+      update_on_miss_trace(m_blk_addr);
 
     //1) update TCP correlation table
     TagSR tag_sr = miss_hist.at(set_idx); 
-    if (tag_sr.valid_0 && tag_sr.valid_1 && TcpEnabled ) {
-      size_t tcp_idx = (tag_sr.tag_0 << (64 - blk_offs - set_bits)) | tag_sr.tag_1;
-
-      if (tcp_pred_tbl.find(tcp_idx) == tcp_pred_tbl.end() ) {
-         std::list<PredEntry> new_lst;
-         PredEntry tcp_entry;
-         tcp_entry.tgt_tag = tag_bits;
-         tcp_entry.counter = 1;
-         new_lst.push_back(tcp_entry);
-         tcp_pred_tbl[tcp_idx] = new_lst;
-      } else
-      {
-        std::list<PredEntry> & pred_lst = tcp_pred_tbl.at(tcp_idx);
-        bool push_new = true;
-        for(std::list<PredEntry>::iterator it = pred_lst.begin(); it != pred_lst.end(); it++)
-        {
-           if(it->tgt_tag == tag_bits) {
-             it->counter += 1;
-             push_new = false;
-             break;
-           }
-        }
-
-        //assert(pred_lst.size() == 1);
-        PredEntry tcp_entry;
-        tcp_entry.tgt_tag = tag_bits;
-        tcp_entry.counter = 1;
-        if (push_new) pred_lst.push_back(tcp_entry); 
-      }
-    }
+    update_tc_tbl(tag_sr, tag_bits, blk_offs, set_bits, dbp_use_refcount);
 
     //2) update miss_hist TAG_SR
     tag_sr.tag_0 = tag_sr.tag_1;
     tag_sr.valid_0 = tag_sr.valid_1;
-    tag_sr.tag_1 = tag_bits;
+    //tag_sr.tag_1 = tag_bits;
+    tag_sr.tag_1 = m_blk_addr;
     tag_sr.valid_1 = true;
     miss_hist[set_idx] = tag_sr;
    
@@ -194,7 +179,7 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
       //eviction required
       bool is_dirty = set.front().dirty;
       size_t evicted_addr = (set.front().tag << (blk_offs + set_bits)) | (set_idx << blk_offs);
-      //size_t evicted_trace = set.front().burstTrace;
+      size_t ref_cnt = set.front().refCount;
 
       evicted_cnt++;
 
@@ -206,7 +191,10 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
       set.push_back(n_blk);
 
       //on eviction, update old_trace
-      update_on_eviction(evicted_addr);
+      if(dbp_use_refcount)
+        update_on_eviction_cnt(evicted_addr, ref_cnt);
+      else
+        update_on_eviction_trace(evicted_addr);
 
       if(is_dirty && parent_cache) 
         parent_cache->access(evicted_addr, pc, true);
@@ -216,66 +204,52 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
       parent_cache->access(addr, pc, wr_access);
 
     //4) Prefetch Operation
-    if (tag_sr.valid_0 && tag_sr.valid_1 && TcpEnabled)
+    bool prefetched = false;
+    size_t prefetch_tag = tcp_prefetch(tag_sr, blk_offs, set_bits, dbp_use_refcount, &prefetched);
+
+    //insert into dead-block position; if not LRU
+    if (prefetched) 
     {
-      size_t tcp_idx = (tag_sr.tag_0 << (64 - blk_offs - set_bits)) | tag_sr.tag_1;
-
-      if (tcp_pred_tbl.find(tcp_idx) != tcp_pred_tbl.end() ) {
-
-        std::list<PredEntry> & pred_lst = tcp_pred_tbl.at(tcp_idx);
-        unsigned max_cnt = 0;
-        size_t prefetch_tag = 0;
-        for(std::list<PredEntry>::iterator it = pred_lst.begin(); it != pred_lst.end(); it++)
+      for(std::list<Entry>::iterator it = set.begin(); it != set.end(); it++)
+      {
+        if (it->pred_dead)
         {
-           if(it->counter > max_cnt) {
-              max_cnt = it->counter;
-              prefetch_tag = it->tgt_tag;
-           }
+         it->dirty = false;
+         it->pred_dead = false;
+         it->prefetched = true;
+         it->referenced = false;
+         it->tag = prefetch_tag;
+         it->refCount = 0;
+         //use_LRU = false; 
+         tcp_pr_cnt++;
+        
+         //DBP update => eviction
+         size_t blk_addr = (prefetch_tag << (blk_offs + set_bits)) | (set_idx << blk_offs);
+         if(dbp_use_refcount)
+           update_on_miss_cnt(blk_addr);
+         else
+           update_on_miss_trace(blk_addr);
+         break;
         }
-        assert(max_cnt > 0);
-
-        //insert into dead-block position; if not LRU
-        //bool use_LRU = true;
-        for(std::list<Entry>::iterator it = set.begin(); it != set.end(); it++)
-        {
-          if (it->pred_dead)
-          {
-           it->dirty = false;
-           it->pred_dead = false;
-           it->prefetched = true;
-           it->referenced = false;
-           it->tag = prefetch_tag;
-           it->refCount = 0;
-           //use_LRU = false; 
-           tcp_pr_cnt++;
-          
- 
-           //DBP update
-           size_t blk_addr = (prefetch_tag << (blk_offs + set_bits)) | (set_idx << blk_offs);
-           update_on_miss(blk_addr);
-           break;
-          }
-        }
-
-        //insert at LRU position if no dead-block exists in the set
-        //if(use_LRU)
-        //{
-          //Entry p_blk; 
-          //p_blk.tag = prefetch_tag;
-          //p_blk.dirty = false;
-          //p_blk.pred_dead = false;
-          //p_blk.prefetched = true;
-          //p_blk.referenced = false;
-          //p_blk.burstTrace = 0;
-          //if((int)set.size() < set_ways) {
-          //  set.push_front(p_blk);
-          //} else {
-          //  set.pop_front();
-          //  set.push_front(p_blk);
-          //}
-        //}
       }
     }
+    //insert at LRU position if no dead-block exists in the set
+    //if(use_LRU)
+    //{
+      //Entry p_blk; 
+      //p_blk.tag = prefetch_tag;
+      //p_blk.dirty = false;
+      //p_blk.pred_dead = false;
+      //p_blk.prefetched = true;
+      //p_blk.referenced = false;
+      //p_blk.burstTrace = 0;
+      //if((int)set.size() < set_ways) {
+      //  set.push_front(p_blk);
+      //} else {
+      //  set.pop_front();
+      //  set.push_front(p_blk);
+      //}
+    //}
   }
 }
 

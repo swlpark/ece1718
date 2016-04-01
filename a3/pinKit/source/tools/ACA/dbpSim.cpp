@@ -89,18 +89,15 @@ static INT32 Usage()
         "This tool produces a memory address trace.\n"
         "For each (dynamic) instruction reading or writing to memory the the ip is recorded\n"
         "\n";
-
     cerr << KNOB_BASE::StringKnobSummary();
-
     cerr << endl;
-
     return -1;
 }
 
 //L2 Data Cache Access - Read 
 static VOID RecordMemRead(VOID * ip, VOID * addr)
 {
-    L1_D_CACHE->access((long long)addr, (long long)ip, false);
+    L1_D_CACHE->access((size_t)addr, (size_t)ip, false);
 #ifdef _DEBUG_
     TraceFile << "@ " << dec << instCount << ", " << hex << ip << ": " << addr << " READ\n" ;
 #endif
@@ -115,7 +112,7 @@ static VOID RecordWriteAddr(VOID * addr)
 //L2 Data Cache Access - Write 
 static VOID RecordMemWrite(VOID * ip)
 {
-    L1_D_CACHE->access((long long)WriteAddr, (long long)ip, true);
+    L1_D_CACHE->access((size_t)WriteAddr, (size_t)ip, true);
 #ifdef _DEBUG_
     TraceFile << "@ " << dec << instCount << ", " << hex << ip << ": " << WriteAddr << " WRITE\n" ;
 #endif
@@ -124,7 +121,7 @@ static VOID RecordMemWrite(VOID * ip)
 //L1 Instruction Cache Access 
 VOID countFunc(VOID * ip)
 {
-  L1_I_CACHE->access((long long)ip, (long long)ip, false);
+  L1_I_CACHE->access((size_t)ip, (size_t)ip, false);
   instCount++;
 }
 
@@ -148,7 +145,6 @@ VOID Instruction(INS ins, VOID *v)
             IARG_INST_PTR, IARG_MEMORYREAD2_EA,
             IARG_END);
     }
-
     // instruments stores using a predicated call, i.e.
     // the call happens iff the store will be actually executed
     if (INS_IsMemoryWrite(ins))
@@ -212,8 +208,19 @@ VOID Fini(INT32 code, VOID *v)
     TraceFile << "L1 D_CACHE TCP Prefetches: " << L1_D_CACHE->get_tcp_pr_cnt() << std::endl;
     TraceFile << "L1 I_CACHE TCP Useless Prefetches: " << L1_I_CACHE->get_useless_pr_cnt() << std::endl;
     TraceFile << "L1 D_CACHE TCP Useless Prefetches: " << L1_D_CACHE->get_useless_pr_cnt() << std::endl;
+
     TraceFile << "L2 ACCESS COUNT: " << L2_CACHE->get_access_cnt() << std::endl;
     TraceFile << "L2 CACHE MISS COUNT: " << L2_CACHE->get_miss_cnt() << std::endl;
+    TraceFile << "L2 CACHE DEAD BLK PRED: " << L2_CACHE->get_dbp_cnt() << std::endl;
+    TraceFile << "L2 CACHE EVICTIONS: " << L2_CACHE->get_evicted_cnt() << std::endl;
+    TraceFile << "L2 CACHE DBP MISS_PRED: " << L2_CACHE->get_dbp_miss_pred() << std::endl;
+    double l2_accuracy = (double)(L2_CACHE->get_dbp_cnt() - L2_CACHE->get_dbp_miss_pred()) / (double) (L2_CACHE->get_dbp_cnt());
+    double l2_cov = (double)(L2_CACHE->get_dbp_cnt() - L2_CACHE->get_dbp_miss_pred()) / (double) (L2_CACHE->get_evicted_cnt());
+    TraceFile << "L2 CACHE DBP ACCURACY : " << l2_accuracy << std::endl;
+    TraceFile << "L2 CACHE DBP COVERAGE : " << l2_cov << std::endl;
+
+    TraceFile << "L2 CACHE TCP Prefetches: " << L2_CACHE->get_tcp_pr_cnt() << std::endl;
+    TraceFile << "L2 CACHE TCP Useless Prefetches: " << L2_CACHE->get_useless_pr_cnt() << std::endl;
     TraceFile << "==============================================" << std::endl;
 
     delete L2_CACHE;
@@ -254,6 +261,7 @@ int main(int argc, char *argv[])
 
     TcpEnabled = (tcp_enable.Value() == 0) ? false : true;
     L2_CACHE = new cacheSim(L2_cache_total_kb.Value(), L2_cache_block_b.Value(), L2_cache_assoc_w.Value(), 0); 
+    L2_CACHE->dbp_use_refcount = true; 
     L1_I_CACHE = new cacheSim(L1_cache_total_kb.Value(), L1_cache_block_b.Value(), L1_cache_assoc_w.Value(), L2_CACHE); 
     L1_D_CACHE = new cacheSim(L1_cache_total_kb.Value(), L1_cache_block_b.Value(), L1_cache_assoc_w.Value(), L2_CACHE); 
 

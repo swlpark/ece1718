@@ -9,6 +9,7 @@
 #include <iostream>
 #include "dbpAndPrefetch.h"
 
+//cache block entry struct
 struct Entry
 {
   bool dirty;       //is accessed?
@@ -17,16 +18,6 @@ struct Entry
   bool referenced;  //is this block ever referenced?
   size_t tag;       //block TAG
   unsigned refCount;//reference count
-};
-
-//stores tags of the last two misses
-struct TagSR
-{
-  size_t tag_0;
-  size_t tag_1;
-  bool valid_0;
-  bool valid_1;
-  TagSR(): tag_0(0), tag_1(0), valid_0(false), valid_1(false) {}
 };
 
 
