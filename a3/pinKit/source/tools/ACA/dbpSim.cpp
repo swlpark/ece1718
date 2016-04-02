@@ -178,36 +178,43 @@ VOID Fini(INT32 code, VOID *v)
     TraceFile << "\ndbpSim: Cache Statistics : " << std::endl;
     TraceFile << "==============================================" << std::endl;
     TraceFile << std::dec;
+
+    TraceFile << "\nL1 Instruction Cache Stats: " << std::endl;
+    TraceFile << "Cache Size (KB): " << L1_cache_total_kb.Value() << std::endl;
+    TraceFile << "Block Size (B): " << L1_cache_block_b.Value() << std::endl;
+    TraceFile << "Set Ways : " << L1_cache_assoc_w.Value() << std::endl;
     TraceFile << "L1 I_CACHE ACCESS COUNT: " << L1_I_CACHE->get_access_cnt() << std::endl;
-    TraceFile << "L1 D_CACHE ACCESS COUNT: " << L1_D_CACHE->get_access_cnt() << std::endl;
-
     TraceFile << "L1 I_CACHE MISS COUNT: " << L1_I_CACHE->get_miss_cnt() << std::endl;
-    TraceFile << "L1 D_CACHE MISS COUNT: " << L1_D_CACHE->get_miss_cnt() << std::endl;
-
     TraceFile << "L1 I_CACHE DEAD BLK PRED: " << L1_I_CACHE->get_dbp_cnt() << std::endl;
-    TraceFile << "L1 D_CACHE DEAD BLK PRED: " << L1_D_CACHE->get_dbp_cnt() << std::endl;
-
     TraceFile << "L1 I_CACHE EVICTIONS: " << L1_I_CACHE->get_evicted_cnt() << std::endl;
-    TraceFile << "L1 D_CACHE EVICTIONS: " << L1_D_CACHE->get_evicted_cnt() << std::endl;
-
     TraceFile << "L1 I_CACHE DBP MISS_PRED: " << L1_I_CACHE->get_dbp_miss_pred() << std::endl;
-    TraceFile << "L1 D_CACHE DBP MISS_PRED: " << L1_D_CACHE->get_dbp_miss_pred() << std::endl;
- 
     double l1i_accuracy = (double)(L1_I_CACHE->get_dbp_cnt() - L1_I_CACHE->get_dbp_miss_pred()) / (double) (L1_I_CACHE->get_dbp_cnt());
-    double l1d_accuracy = (double)(L1_D_CACHE->get_dbp_cnt() - L1_D_CACHE->get_dbp_miss_pred()) / (double) (L1_D_CACHE->get_dbp_cnt());
-
     TraceFile << "L1 I_CACHE DBP ACCURACY : " << l1i_accuracy << std::endl;
-    TraceFile << "L1 D_CACHE DBP ACCURACY : " << l1d_accuracy << std::endl;
-
     double l1i_cov = (double)(L1_I_CACHE->get_dbp_cnt() - L1_I_CACHE->get_dbp_miss_pred()) / (double) (L1_I_CACHE->get_evicted_cnt());
-    double l1d_cov = (double)(L1_D_CACHE->get_dbp_cnt() - L1_D_CACHE->get_dbp_miss_pred()) / (double) (L1_D_CACHE->get_evicted_cnt());
-
     TraceFile << "L1 I_CACHE DBP COVERAGE : " << l1i_cov << std::endl;
-    TraceFile << "L1 D_CACHE DBP COVERAGE : " << l1d_cov << std::endl;
     TraceFile << "L1 I_CACHE TCP Prefetches: " << L1_I_CACHE->get_tcp_pr_cnt() << std::endl;
-    TraceFile << "L1 D_CACHE TCP Prefetches: " << L1_D_CACHE->get_tcp_pr_cnt() << std::endl;
     TraceFile << "L1 I_CACHE TCP Useless Prefetches: " << L1_I_CACHE->get_useless_pr_cnt() << std::endl;
+
+    TraceFile << "\nL1 Data Cache Stats: " << std::endl;
+    TraceFile << "Cache Size (KB): " << L1_cache_total_kb.Value() << std::endl;
+    TraceFile << "Block Size (B): " << L1_cache_block_b.Value() << std::endl;
+    TraceFile << "Set Ways : " << L1_cache_assoc_w.Value() << std::endl;
+    TraceFile << "L1 D_CACHE ACCESS COUNT: " << L1_D_CACHE->get_access_cnt() << std::endl;
+    TraceFile << "L1 D_CACHE MISS COUNT: " << L1_D_CACHE->get_miss_cnt() << std::endl;
+    TraceFile << "L1 D_CACHE DEAD BLK PRED: " << L1_D_CACHE->get_dbp_cnt() << std::endl;
+    TraceFile << "L1 D_CACHE EVICTIONS: " << L1_D_CACHE->get_evicted_cnt() << std::endl;
+    TraceFile << "L1 D_CACHE DBP MISS_PRED: " << L1_D_CACHE->get_dbp_miss_pred() << std::endl;
+    double l1d_accuracy = (double)(L1_D_CACHE->get_dbp_cnt() - L1_D_CACHE->get_dbp_miss_pred()) / (double) (L1_D_CACHE->get_dbp_cnt());
+    TraceFile << "L1 D_CACHE DBP ACCURACY : " << l1d_accuracy << std::endl;
+    double l1d_cov = (double)(L1_D_CACHE->get_dbp_cnt() - L1_D_CACHE->get_dbp_miss_pred()) / (double) (L1_D_CACHE->get_evicted_cnt());
+    TraceFile << "L1 D_CACHE DBP COVERAGE : " << l1d_cov << std::endl;
+    TraceFile << "L1 D_CACHE TCP Prefetches: " << L1_D_CACHE->get_tcp_pr_cnt() << std::endl;
     TraceFile << "L1 D_CACHE TCP Useless Prefetches: " << L1_D_CACHE->get_useless_pr_cnt() << std::endl;
+
+    TraceFile << "\nL2 Instruction/Data Cache Stats: " << std::endl;
+    TraceFile << "Cache Size (KB): " << L2_cache_total_kb.Value() << std::endl;
+    TraceFile << "Block Size (B): " << L2_cache_block_b.Value() << std::endl;
+    TraceFile << "Set Ways : " << L2_cache_assoc_w.Value() << std::endl;
 
     TraceFile << "L2 ACCESS COUNT: " << L2_CACHE->get_access_cnt() << std::endl;
     TraceFile << "L2 CACHE MISS COUNT: " << L2_CACHE->get_miss_cnt() << std::endl;

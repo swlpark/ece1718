@@ -56,8 +56,8 @@ extern bool UseCacheBurst;
 void update_trace (size_t blk_addr, size_t pc);
 bool predict_db_trace (size_t blk_addr);
 bool predict_db_cnt(size_t blk_addr, int ref_cnt);
-void update_on_miss_trace(size_t blk_addr);
-void update_on_miss_cnt(size_t blk_addr);
+void insert_on_miss_trace(size_t blk_addr, size_t pc);
+void insert_on_miss_cnt(size_t blk_addr);
 void update_on_eviction_trace(size_t blk_add);
 void update_on_eviction_cnt(size_t blk_add, int ref_cnt);
 

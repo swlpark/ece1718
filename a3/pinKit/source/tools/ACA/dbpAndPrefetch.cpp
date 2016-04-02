@@ -2,12 +2,12 @@
 
 std::map <size_t, TraceEntry> tr_hist_tbl; //accessed by L1-I and L1-D caches
 std::map <size_t, RefEntry> ref_hist_tbl;  //accessed by L2 cache
-std::map <size_t, std::list<PredEntry> > l1_tcp_pred_tbl; 
-std::map <size_t, std::list<PredEntry> > l2_tcp_pred_tbl;
+std::map <size_t, std::list<PredEntry> > l1_tcp_pred_tbl; //TCP correlation table for L1 I/D caches
+std::map <size_t, std::list<PredEntry> > l2_tcp_pred_tbl; //TCP correlation table for L2 combined cache
 
 bool TcpEnabled = false;
-bool UseCacheBurst = false;
 
+//Update BurstTrace from a cache hit
 void update_trace(size_t blk_addr, size_t pc)
 {
     if(tr_hist_tbl.find(blk_addr) == tr_hist_tbl.end()) 
@@ -20,6 +20,7 @@ void update_trace(size_t blk_addr, size_t pc)
     tr_hist_tbl[blk_addr].current_trace &= ((1 << 30) - 1);
 }
 
+//Predict if a given block is dead after a cache access based on BurstTrace
 bool predict_db_trace(size_t blk_addr)
 {
   if (tr_hist_tbl.find(blk_addr) != tr_hist_tbl.end())
@@ -32,11 +33,13 @@ bool predict_db_trace(size_t blk_addr)
   return false;
 }
 
+//Predict if a given block is dead after a cache burst
 bool predict_db_cnt(size_t blk_addr, int ref_cnt)
 {
   if (ref_hist_tbl.find(blk_addr) != ref_hist_tbl.end())
   {
-    if((ref_hist_tbl[blk_addr].dead_cnt == ref_cnt) && ref_hist_tbl[blk_addr].sat_cnt == 1)
+    if((ref_hist_tbl[blk_addr].dead_cnt == ref_cnt) &&
+    (ref_hist_tbl[blk_addr].sat_cnt == 1 || ref_hist_tbl[blk_addr].filter_cnt >  0))
     {
       return true;
     }
@@ -44,9 +47,10 @@ bool predict_db_cnt(size_t blk_addr, int ref_cnt)
   return false;
 }
 
-void update_on_miss_cnt(size_t blk_addr)
+//Insert a new entry to RefCount+ history table on a L2 cache miss
+void insert_on_miss_cnt(size_t blk_addr)
 {
-    if (ref_hist_tbl.find(blk_addr) == ref_hist_tbl.end() )
+    if (ref_hist_tbl.find(blk_addr) == ref_hist_tbl.end())
     {
        RefEntry new_tr;
        new_tr.sat_cnt = 0;
@@ -56,7 +60,8 @@ void update_on_miss_cnt(size_t blk_addr)
     }
 }
 
-void update_on_miss_trace(size_t blk_addr)
+//Insert a new entry to BurstTrace history table on a L1 cache miss
+void insert_on_miss_trace(size_t blk_addr, size_t pc)
 {
     if (tr_hist_tbl.find(blk_addr) != tr_hist_tbl.end() )
     {
@@ -67,11 +72,40 @@ void update_on_miss_trace(size_t blk_addr)
        TraceEntry new_tr;
        new_tr.confidence = false;
        new_tr.current_trace = 0;
+
        new_tr.old_trace = 0;
        tr_hist_tbl[blk_addr] = new_tr;
     }
 }
 
+//Update RefCount+ history table on a L2 cache miss
+void update_on_eviction_cnt(size_t blk_addr, int ref_cnt)
+{
+   //on eviction, update trace
+   if (ref_hist_tbl.find(blk_addr) != ref_hist_tbl.end() ) {
+     if(ref_hist_tbl[blk_addr].dead_cnt < ref_cnt)
+     {
+       ref_hist_tbl[blk_addr].sat_cnt = 0;
+       ref_hist_tbl[blk_addr].dead_cnt = ref_cnt;
+     } else if (ref_cnt == ref_hist_tbl[blk_addr].dead_cnt) {
+       ref_hist_tbl[blk_addr].sat_cnt = 1;
+     } else if (ref_cnt < ref_hist_tbl[blk_addr].dead_cnt) {
+       //RefCount+ logic: preventing lower RefCount from resetting confidence
+       if (ref_cnt == ref_hist_tbl[blk_addr].filter_cnt) 
+       {
+         ref_hist_tbl[blk_addr].sat_cnt = 1;
+         ref_hist_tbl[blk_addr].dead_cnt = ref_cnt;
+       }
+       else
+       {
+         ref_hist_tbl[blk_addr].sat_cnt = 0;
+         ref_hist_tbl[blk_addr].filter_cnt = ref_cnt;
+       }
+     }
+   }
+}
+
+//Update BurstTrace history table on a L1 cache miss
 void update_on_eviction_trace(size_t blk_addr)
 {
    //on eviction, update trace
@@ -83,20 +117,6 @@ void update_on_eviction_trace(size_t blk_addr)
      }
      tr_hist_tbl[blk_addr].old_trace = tr_hist_tbl[blk_addr].current_trace;
      tr_hist_tbl[blk_addr].current_trace = 0;
-   }
-}
-
-void update_on_eviction_cnt(size_t blk_addr, int ref_cnt)
-{
-   //on eviction, update trace
-   if (ref_hist_tbl.find(blk_addr) != ref_hist_tbl.end() ) {
-     if(ref_hist_tbl[blk_addr].dead_cnt == ref_cnt)
-     {
-       ref_hist_tbl[blk_addr].sat_cnt = 1;
-     } else {
-       ref_hist_tbl[blk_addr].sat_cnt = 0;
-     }
-     ref_hist_tbl[blk_addr].dead_cnt = ref_cnt;
    }
 }
 
@@ -136,7 +156,7 @@ void update_tc_tbl(TagSR tag_sr, size_t tag, int blk_offs, int set_bits, bool us
   }
 }
 
-//grab TCP-prefetched tag to cache
+//trigger a TC prefetch, and return the tag of pre-fetched block
 size_t tcp_prefetch(TagSR tag_sr, int blk_offs, int set_bits, bool use_ref_cnt, bool * did_prefetch)
 {
     std::map <size_t, std::list<PredEntry> > & tcp_pred_tbl = (use_ref_cnt) ? l2_tcp_pred_tbl : l1_tcp_pred_tbl;

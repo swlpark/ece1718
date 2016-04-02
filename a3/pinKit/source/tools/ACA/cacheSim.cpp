@@ -54,7 +54,6 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
   //sanity check: BLOCK Address Reconstruction
   //size_t blk_addr = (tag_bits << (blk_offs + set_bits)) | (set_idx << blk_offs);
   //assert(blk_addr == (addr & ~((1 << blk_offs) - 1)));
-
   bool cache_hit = false;
   if(set_idx >= sets.size())
   {
@@ -144,9 +143,9 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
     size_t m_blk_addr = (tag_bits << (blk_offs + set_bits)) | (set_idx << blk_offs);
 
     if (dbp_use_refcount)
-      update_on_miss_cnt(m_blk_addr);
+      insert_on_miss_cnt(m_blk_addr);
     else
-      update_on_miss_trace(m_blk_addr);
+      insert_on_miss_trace(m_blk_addr, pc);
 
     //1) update TCP correlation table
     TagSR tag_sr = miss_hist.at(set_idx); 
@@ -223,12 +222,12 @@ void cacheSim::access(size_t addr, size_t pc, bool wr_access)
          //use_LRU = false; 
          tcp_pr_cnt++;
         
-         //DBP update => eviction
+         //DBP history update for the prefetched block
          size_t blk_addr = (prefetch_tag << (blk_offs + set_bits)) | (set_idx << blk_offs);
          if(dbp_use_refcount)
-           update_on_miss_cnt(blk_addr);
+           insert_on_miss_cnt(blk_addr);
          else
-           update_on_miss_trace(blk_addr);
+           insert_on_miss_trace(blk_addr, pc);
          break;
         }
       }
